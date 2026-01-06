@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from langchain_api.agent import Agent
+from langchain_api.agent.agent import Agent
 from langgraph.types import Command
 import os
 
