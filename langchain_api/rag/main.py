@@ -13,6 +13,7 @@ model = ChatOpenAI(
     tags=["rag"],
 )
 
+
 agent = create_agent(
     model=model,
     middleware=[
@@ -26,15 +27,22 @@ for mode, chunk in agent.stream(
         "messages": [
             {
                 "role": "user",
-                "content": """你好啊""",
+                "content": """你是谁""",
             }
         ]
     },
     stream_mode=["messages", "updates"],
 ):
-    if mode == "messages":  # 只处理消息流
+    if mode == "values":  # 处理最终值
+        final_response = chunk
+        print("\n[Final Response]:", final_response, flush=True)
+    elif mode == "messages":  # 只处理消息流
         msg, metadata = chunk
         if metadata.get("tags", []) == ["rag"]:
             if msg.content:
                 print(msg.content, end="", flush=True)
+                # print(msg.content)
+    elif mode == "updates":  # 处理更新流
+        update = chunk
+        print(f"\n[Update]: {update}", flush=True)
 print()
