@@ -1,9 +1,11 @@
 from langchain_openai import ChatOpenAI
 from langchain.agents import create_agent
 from langchain_api.middleware import RAGMiddleware
+from langchain_api.retriever import vector_store
 import os
 
 os.system("clear")
+
 model = ChatOpenAI(
     model="qwen3",
     base_url="http://localhost:8082/v1",
@@ -14,7 +16,7 @@ model = ChatOpenAI(
 agent = create_agent(
     model=model,
     middleware=[
-        RAGMiddleware(),
+        RAGMiddleware(vector_store=vector_store),
     ],
 )
 

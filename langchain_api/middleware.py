@@ -1,30 +1,39 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from typing import List, TypedDict
+from typing import List, NotRequired, TypedDict
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain.agents.middleware import (
-    AgentMiddleware,
-)
+from langchain.agents.middleware import AgentMiddleware, ModelRequest
+from langchain_core.vectorstores import VectorStore
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_api.retriever import retrieve_tool
+from langchain.agents import AgentState
+
+from langchain_core.documents import Document
 
 shanghai_tz = ZoneInfo("Asia/Shanghai")  # 设置亚洲/上海时区
 
 
-class RAGMiddleware(AgentMiddleware):
-    def __init__(self):
-        pass
+class CustomState(AgentState):
+    docs: NotRequired[List[Document]]  # 持久化计数器
 
-    def wrap_model_call(self, request, handler):
+
+class RAGMiddleware(AgentMiddleware[CustomState]):
+    state_schema = CustomState
+
+    def __init__(self, vector_store: VectorStore):
+        self.vector_store = vector_store
+
+    def wrap_model_call(self, request: ModelRequest, handler):
         """RAG 每次的输入只能有 system 和 human 两个"""
         if len(request.messages) == 2:
             system_msg = request.messages[0]
         human_msg: HumanMessage = request.messages[-1]
         query = human_msg.content
-        context = retrieve_tool.invoke(query)
-        # 设置中国时区
-        # 设置亚洲/上海时区
-
+        retrieved_docs = self.vector_store.similarity_search_with_score(query, k=3)
+        context = ""
+        docs = []
+        for idx, (doc, socre) in enumerate(retrieved_docs, start=1):
+            docs.append(doc)
+            context += f"文档 {idx}: \n{doc.page_content}\n\n"
         current_time = datetime.now(shanghai_tz)
         cur_time = f"""<当前的时间>当前的时间: {current_time.year}年{current_time.month}月{current_time.day}日
 如果问题中提供的时间超过当前的时间，必须指出问题中的时间尚未到来。
@@ -96,8 +105,13 @@ pie
 """
             + cur_time
         )
+        # 更新状态中的 docs
+        current_state = dict(request.state)  # 复制当前状态
+        current_state["docs"] = docs
 
-        return handler(request.override(system_message=sys_msg))
+        request.system_message = sys_msg
+        request.state = current_state
+        return handler(request)
 
 
 class PlanningMiddleware(AgentMiddleware):
