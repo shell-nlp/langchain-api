@@ -21,12 +21,14 @@ class RAGMiddleware(AgentMiddleware[CustomState]):
 
     def __init__(self, vector_store: VectorStore):
         self.vector_store = vector_store
+        self.system_msg = None
 
-    def wrap_model_call(self, request: ModelRequest, handler):
+    def before_model(self, state: CustomState, runtime):
         """RAG 每次的输入只能有 system 和 human 两个"""
-        if len(request.messages) == 2:
-            system_msg = request.messages[0]
-        human_msg: HumanMessage = request.messages[-1]
+        messages = state["messages"]
+        if len(messages) == 2:
+            system_msg = messages[0]
+        human_msg: HumanMessage = messages[-1]
         query = human_msg.content
         retrieved_docs = self.vector_store.similarity_search_with_score(query, k=3)
         context = ""
@@ -105,13 +107,11 @@ pie
 """
             + cur_time
         )
-        # 更新状态中的 docs
-        current_state = dict(request.state)  # 复制当前状态
-        current_state["docs"] = docs
+        self.system_msg = sys_msg
+        return {"docs": docs}
 
-        request.system_message = sys_msg
-        request.state = current_state
-        return handler(request)
+    def wrap_model_call(self, request, handler):
+        return handler(request.override(system_message=self.system_msg))
 
 
 class PlanningMiddleware(AgentMiddleware):
