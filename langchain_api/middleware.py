@@ -1,7 +1,7 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from typing import List, NotRequired, TypedDict
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage, BaseMessage
 from langchain.agents.middleware import AgentMiddleware, ModelRequest
 from langchain_core.vectorstores import VectorStore
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -9,40 +9,12 @@ from langchain.agents import AgentState
 
 from langchain_core.documents import Document
 
-shanghai_tz = ZoneInfo("Asia/Shanghai")  # 设置亚洲/上海时区
+from langgraph.runtime import Runtime
+from langchain_openai import ChatOpenAI
 
+from loguru import logger
 
-class CustomState(AgentState):
-    docs: NotRequired[List[Document]]  # 持久化计数器
-
-
-class RAGMiddleware(AgentMiddleware[CustomState]):
-    state_schema = CustomState
-
-    def __init__(self, vector_store: VectorStore):
-        self.vector_store = vector_store
-        self.system_msg = None
-
-    def before_model(self, state: CustomState, runtime):
-        """RAG 每次的输入只能有 system 和 human 两个"""
-        messages = state["messages"]
-        if len(messages) == 2:
-            system_msg = messages[0]
-        human_msg: HumanMessage = messages[-1]
-        query = human_msg.content
-        retrieved_docs = self.vector_store.similarity_search_with_score(query, k=3)
-        context = ""
-        docs = []
-        for idx, (doc, socre) in enumerate(retrieved_docs, start=1):
-            docs.append(doc)
-            context += f"文档 {idx}: \n{doc.page_content}\n\n"
-        current_time = datetime.now(shanghai_tz)
-        cur_time = f"""<当前的时间>当前的时间: {current_time.year}年{current_time.month}月{current_time.day}日
-如果问题中提供的时间超过当前的时间，必须指出问题中的时间尚未到来。
-</当前的时间>"""
-
-        sys_msg = SystemMessage(
-            content=f"""<角色>您是一个精通文档引用的问答专家，能够精准依据来源内容构建回答。</角色>
+RAG_SYSTEM_PROMPT = """<角色>您是一个精通文档引用的问答专家，能够精准依据来源内容构建回答。</角色>
 <任务>基于提供的内容和用户的问题,撰写一篇详细完备的最终回答.</任务>
 
 <任务描述>
@@ -105,8 +77,108 @@ pie
 {context}
 </信息来源>
 """
-            + cur_time
+
+REWRITE_QUREY_PROMPT = """# 你需要根据给定的对话历史和当前问题，生成一个更清晰、更完整、更适合检索的改写问题。
+## 必须要遵守的要求：
+- 你只需要改写用户最终的问题，禁止回答问题
+- 指代消解（解决代词指代问题）
+- 上下文信息融合（将对话历史的关键信息融入新问题）
+- 检索友好性（确保改写后的问题包含关键实体和明确意图
+- 直接输出改写后的问题，无需额外解释。
+- 保留原问题的核心意图，但补充缺失的上下文或修正模糊表达。
+- 若对话历史为空（首轮提问），则直接优将用户问题直接返回，有聊天历史则进行改写。
+
+## 输入输出格式示例：
+对话历史：
+human: 爱因斯坦的成就是什么？  
+ai: 他提出了相对论，获得诺贝尔物理学奖。  
+当前问题: 他出生在哪里？
+输出：爱因斯坦出生在哪里？
+
+对话历史：
+human: Python怎么读写文件？  
+ai: 使用open()函数，模式参数指定读写方式。  
+当前问题: 能举个例子吗？
+输出: 请举例说明Python中用open()函数读写文件的代码示例
+
+对话历史：
+  
+当前问题: 密云水库在哪里？
+输出: 密云水库在哪里？
+
+---
+接下来正式开始！
+
+对话历史：
+{history}
+
+当前问题：{query}
+输出:"""
+
+from langchain_core.messages import HumanMessage, SystemMessage, BaseMessage, AIMessage
+
+
+def messages2str(messages: List[BaseMessage]):
+    msg_str_list = []
+    for msg in messages:
+        if msg.type == "system":
+            continue
+        msg_str = f"{msg.type}: " + msg.content
+        msg_str_list.append(msg_str)
+    return "\n".join(msg_str_list)
+
+
+shanghai_tz = ZoneInfo("Asia/Shanghai")  # 设置亚洲/上海时区
+
+
+class CustomState(AgentState):
+    docs: NotRequired[List[Document]]  # 持久化计数器
+
+
+class RAGMiddleware(AgentMiddleware[CustomState]):
+    state_schema = CustomState
+
+    def __init__(
+        self,
+        vector_store: VectorStore,
+        rewrite_query: bool = False,
+        model: BaseChatModel = None,
+    ):
+        self.vector_store = vector_store
+        self.system_msg = None
+        self.rewrite_query = rewrite_query
+        self.model = model
+        if rewrite_query and not self.model:
+            raise AssertionError("当 rewrite_query 为 True 时，model 不能为空")
+
+    def before_model(self, state: CustomState, runtime: Runtime):
+        """RAG 每次的输入只能有 system 和 human 两个"""
+        messages = state["messages"]
+        last_msg: HumanMessage = messages[-1]
+        query = last_msg.content
+        # 改写问题
+        if self.rewrite_query and self.model:
+            new_query = self.model.invoke(
+                REWRITE_QUREY_PROMPT.format(history=messages2str(messages), query=query)
+            ).content
+            logger.info(f"改写问题：{query} -> {new_query}")
+            query = new_query
+
+        retrieved_docs = self.vector_store.similarity_search_with_score(query, k=3)
+        context = ""
+        docs = []
+        for idx, (doc, socre) in enumerate(retrieved_docs, start=1):
+            docs.append(doc)
+            context += f"文档 {idx}: \n{doc.page_content}\n\n"
+        current_time = datetime.now(shanghai_tz)
+        cur_time = f"""\n<当前的时间>当前的时间: {current_time.year}年{current_time.month}月{current_time.day}日
+如果问题中提供的时间超过当前的时间，必须指出问题中的时间尚未到来。
+</当前的时间>"""
+
+        sys_msg = SystemMessage(
+            content=RAG_SYSTEM_PROMPT.format(context=context) + cur_time
         )
+
         self.system_msg = sys_msg
         return {"docs": docs}
 

@@ -10,6 +10,7 @@ dependencies = [
     "langchain>=1.2.0",
     "langchain-elasticsearch>=1.0.0",
     "langchain-openai>=1.1.6",
+    "loguru>=0.7.3",
 ]
 
 [[tool.uv.index]]

@@ -12,12 +12,18 @@ model = ChatOpenAI(
     api_key="your_api_key",
     tags=["rag"],
 )
-
+rewrite_model = ChatOpenAI(
+    model="qwen3",
+    base_url="http://localhost:8082/v1",
+    api_key="your_api_key",
+)
 
 agent = create_agent(
     model=model,
     middleware=[
-        RAGMiddleware(vector_store=vector_store),
+        RAGMiddleware(
+            vector_store=vector_store, rewrite_query=True, model=rewrite_model
+        ),
     ],
 )
 
