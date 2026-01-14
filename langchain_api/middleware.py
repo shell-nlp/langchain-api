@@ -1,12 +1,13 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from typing import List, NotRequired, TypedDict
+from typing import List, NotRequired, TypedDict, Literal
 from langchain_core.messages import HumanMessage, SystemMessage, BaseMessage
 from langchain.agents.middleware import AgentMiddleware, ModelRequest
 from langchain_core.vectorstores import VectorStore
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain.agents import AgentState
 
+from langchain_core.messages import HumanMessage, SystemMessage, BaseMessage, AIMessage
 from langchain_core.documents import Document
 
 from langgraph.runtime import Runtime
@@ -115,7 +116,31 @@ ai: 使用open()函数，模式参数指定读写方式。
 当前问题：{query}
 输出:"""
 
-from langchain_core.messages import HumanMessage, SystemMessage, BaseMessage, AIMessage
+RETRIEVE_ROUTER_PROMPT = """<角色>你是RAG系统的问题路由助手</角色>
+<任务描述>
+你能将用户的问题路由到最佳的路径上,如果用户的问题是专业的、特定领域的、不能使用自身的能力进行回答的,则路由到RAG,否则，路由到LLM。
+以json格式输出，json体中也要解释其原因。 路由的值只能是 "LLM"或者"RAG"，禁止输出其它内容，且只能有一个。
+形如：
+{{
+    "原因":"路由选择的原因解释",
+    "路由": "LLM/RAG"
+}}
+
+样例:
+问题：你是谁
+输出：
+{{
+    "原因":"这个问题不是专业的问题，不需要借助RAG,使用自身的能力就可以回答。",
+    "路由": "LLM"
+}}
+
+问题：什么是知识融合
+输出：
+{{
+    "原因":"这个问题是专业的问题，需要借助RAG系统才能准确回答。",
+    "路由": "RAG"
+}}
+</任务描述>"""
 
 
 def messages2str(messages: List[BaseMessage]):
@@ -143,11 +168,27 @@ class RAGMiddleware(AgentMiddleware[CustomState]):
         vector_store: VectorStore,
         rewrite_query: bool = False,
         model: BaseChatModel = None,
+        retrieve_router: bool = False,
     ):
+        """RAG中间件，用于边界的实现RAG系统
+
+        Parameters
+        ----------
+        vector_store : VectorStore
+            向量数据库，支持多种向量数据库
+        rewrite_query : bool, optional
+            是否重新query, by default False
+        model : BaseChatModel, optional
+            当需要重写query时，需要传入模型, by default None
+        retrieve_router : bool, optional
+            用于决定是否智能判断是否使用使用RAG, by default False
+
+        """
         self.vector_store = vector_store
-        self.system_msg = None
         self.rewrite_query = rewrite_query
         self.model = model
+        self.retrieve_router = retrieve_router
+        self.system_msg = None
         if rewrite_query and not self.model:
             raise AssertionError("当 rewrite_query 为 True 时，model 不能为空")
 
@@ -163,24 +204,42 @@ class RAGMiddleware(AgentMiddleware[CustomState]):
             ).content
             logger.info(f"改写问题：{query} -> {new_query}")
             query = new_query
+        # 检索路由
+        default_router = "RAG"
+        if self.retrieve_router and self.model:
 
-        retrieved_docs = self.vector_store.similarity_search_with_score(query, k=3)
-        context = ""
-        docs = []
-        for idx, (doc, socre) in enumerate(retrieved_docs, start=1):
-            docs.append(doc)
-            context += f"文档 {idx}: \n{doc.page_content}\n\n"
-        current_time = datetime.now(shanghai_tz)
-        cur_time = f"""\n<当前的时间>当前的时间: {current_time.year}年{current_time.month}月{current_time.day}日
+            class Output(TypedDict):
+                原因: str
+                路由: Literal["LLM", "RAG"]
+
+            structured_model = self.model.with_structured_output(schema=Output)
+            value = structured_model.invoke(
+                [
+                    SystemMessage(content=RETRIEVE_ROUTER_PROMPT),
+                    HumanMessage(content=f"问题：{query}\n输出："),
+                ]
+            )
+            logger.info(f"路由结果：{value}")
+            default_router = value["路由"]
+
+        if default_router == "RAG":
+            retrieved_docs = self.vector_store.similarity_search_with_score(query, k=3)
+            context = ""
+            docs = []
+            for idx, (doc, socre) in enumerate(retrieved_docs, start=1):
+                docs.append(doc)
+                context += f"文档 {idx}: \n{doc.page_content}\n\n"
+            current_time = datetime.now(shanghai_tz)
+            cur_time = f"""\n<当前的时间>当前的时间: {current_time.year}年{current_time.month}月{current_time.day}日
 如果问题中提供的时间超过当前的时间，必须指出问题中的时间尚未到来。
 </当前的时间>"""
 
-        sys_msg = SystemMessage(
-            content=RAG_SYSTEM_PROMPT.format(context=context) + cur_time
-        )
+            sys_msg = SystemMessage(
+                content=RAG_SYSTEM_PROMPT.format(context=context) + cur_time
+            )
 
-        self.system_msg = sys_msg
-        return {"docs": docs}
+            self.system_msg = sys_msg
+            return {"docs": docs}
 
     def wrap_model_call(self, request, handler):
         return handler(request.override(system_message=self.system_msg))
