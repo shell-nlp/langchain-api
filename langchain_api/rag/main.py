@@ -22,7 +22,10 @@ agent = create_agent(
     model=model,
     middleware=[
         RAGMiddleware(
-            vector_store=vector_store, rewrite_query=True, model=rewrite_model
+            vector_store=vector_store,
+            rewrite_query=True,
+            model=rewrite_model,
+            retrieve_router=True,
         ),
     ],
 )
@@ -33,7 +36,7 @@ for mode, chunk in agent.stream(
         "messages": [
             {
                 "role": "user",
-                "content": """你是谁""",
+                "content": """李四的职位是什么？""",
             }
         ]
     },
