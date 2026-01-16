@@ -192,20 +192,44 @@ class RAGMiddleware(AgentMiddleware[CustomState]):
         if rewrite_query and not self.model:
             raise AssertionError("当 rewrite_query 为 True 时，model 不能为空")
 
-    def before_model(self, state: CustomState, runtime: Runtime):
-        """RAG 每次的输入只能有 system 和 human 两个"""
-        messages = state["messages"]
-        last_msg: HumanMessage = messages[-1]
-        query = last_msg.content
-        # 改写问题
+    def _rewrite_query(self, query: str, messages: List[BaseMessage]) -> str:
+        """用户根据历史消息重写query
+
+        Parameters
+        ----------
+        query : str
+            用户当前query
+        messages : List[BaseMessage]
+            历史消息
+
+        Returns
+        -------
+        str
+            最新的query
+        """
         if self.rewrite_query and self.model:
             new_query = self.model.invoke(
                 REWRITE_QUREY_PROMPT.format(history=messages2str(messages), query=query)
             ).content
             logger.info(f"改写问题：{query} -> {new_query}")
             query = new_query
-        # 检索路由
-        default_router = "RAG"
+        return query
+
+    def _retrieve_router(self, query: str) -> Literal["LLM", "RAG"]:
+        """智能判断是否使用RAG
+
+        Parameters
+        ----------
+        query : str
+            用户query
+
+        Returns
+        -------
+        Literal["LLM", "RAG"]
+            LLM/RAG
+        """
+
+        router = "RAG"
         if self.retrieve_router and self.model:
 
             class Output(TypedDict):
@@ -220,9 +244,21 @@ class RAGMiddleware(AgentMiddleware[CustomState]):
                 ]
             )
             logger.info(f"路由结果：{value}")
-            default_router = value["路由"]
+            router = value["路由"]
+        return router
 
-        if default_router == "RAG":
+    def before_model(self, state: CustomState, runtime: Runtime):
+        """RAG 每次的输入只能有 system 和 human 两个"""
+        messages = state["messages"]
+        print("messages: ", messages)
+        last_msg: HumanMessage = messages[-1]
+        query = last_msg.content
+        # 改写问题
+        query = self._rewrite_query(query, messages)
+        # 检索路由
+        router = self._retrieve_router(query)
+
+        if router == "RAG":
             retrieved_docs = self.vector_store.similarity_search_with_score(query, k=3)
             context = ""
             docs = []
@@ -239,7 +275,9 @@ class RAGMiddleware(AgentMiddleware[CustomState]):
             )
 
             self.system_msg = sys_msg
-            return {"docs": docs}
+            return {
+                "docs": docs,
+            }
 
     def wrap_model_call(self, request, handler):
         return handler(request.override(system_message=self.system_msg))
