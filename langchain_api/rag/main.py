@@ -2,10 +2,11 @@ from langchain_openai import ChatOpenAI
 from langchain.agents import create_agent
 from langchain_api.middleware import RAGMiddleware
 from langchain_api.retriever import vector_store
+from langgraph.checkpoint.memory import MemorySaver
 import os
 
 os.system("clear")
-
+checkpointer = MemorySaver()
 model = ChatOpenAI(
     model="qwen3",
     base_url="http://localhost:8082/v1",
@@ -28,30 +29,36 @@ agent = create_agent(
             retrieve_router=True,
         ),
     ],
+    checkpointer=checkpointer,
 )
 
-
-for mode, chunk in agent.stream(
-    {
-        "messages": [
-            {
-                "role": "user",
-                "content": """李四的职位是什么？""",
-            }
-        ]
-    },
-    stream_mode=["messages", "updates"],
-):
-    if mode == "values":  # 处理最终值
-        final_response = chunk
-        print("\n[Final Response]:", final_response, flush=True)
-    elif mode == "messages":  # 只处理消息流
-        msg, metadata = chunk
-        if metadata.get("tags", []) == ["rag"]:
-            if msg.content:
-                print(msg.content, end="", flush=True)
-                # print(msg.content)
-    elif mode == "updates":  # 处理更新流
-        update = chunk
-        print(f"\n[Update]: {update}", flush=True)
-print()
+config = {"configurable": {"thread_id": "123"}}
+while True:
+    query = input("请输入问题：")
+    if query == "exit":
+        break
+    for mode, chunk in agent.stream(
+        {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": f"""{query}""",
+                }
+            ]
+        },
+        stream_mode=["messages", "updates"],
+        config=config,
+    ):
+        if mode == "values":  # 处理最终值
+            final_response = chunk
+            print("\n[Final Response]:", final_response, flush=True)
+        elif mode == "messages":  # 只处理消息流
+            msg, metadata = chunk
+            if metadata.get("tags", []) == ["rag"]:
+                if msg.content:
+                    print(msg.content, end="", flush=True)
+                    # print(msg.content)
+        elif mode == "updates":  # 处理更新流
+            update = chunk
+            print(f"\n[Update]: {update}", flush=True)
+    print()
