@@ -5,6 +5,7 @@ from langchain.agents.middleware import (
 from langchain_openai import ChatOpenAI
 from langchain_api.middleware import PlanningMiddleware
 from langgraph.checkpoint.memory import MemorySaver
+from langchain_api.settting import settings
 
 checkpointer = MemorySaver()
 
@@ -22,9 +23,7 @@ def multiply(a: float, b: float) -> float:
 class Agent:
     def __init__(self):
         self.model = ChatOpenAI(
-            model="qwen3",
-            base_url="http://localhost:8082/v1",
-            api_key="your_api_key",
+            model=settings.CHAT_MODEL_NAME,
             tags=["agent"],
         )
 
@@ -36,9 +35,7 @@ class Agent:
             middleware=[
                 PlanningMiddleware(
                     model=ChatOpenAI(
-                        model="qwen3",
-                        base_url="http://localhost:8082/v1",
-                        api_key="your_api_key",
+                        model=settings.CHAT_MODEL_NAME,
                     )
                 ),
                 HumanInTheLoopMiddleware(interrupt_on={"add": True}),

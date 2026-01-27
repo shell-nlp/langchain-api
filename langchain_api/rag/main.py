@@ -3,22 +3,19 @@ from langchain.agents import create_agent
 from langchain_api.middleware import RAGMiddleware
 from langchain_api.retriever import vector_store
 from langgraph.checkpoint.memory import MemorySaver
+from langchain_api.settting import settings
 import os
 
 os.system("clear")
-checkpointer = MemorySaver()
+
 model = ChatOpenAI(
-    model="qwen3",
-    base_url="http://localhost:8082/v1",
-    api_key="your_api_key",
+    model=settings.CHAT_MODEL_NAME,
     tags=["rag"],
 )
 rewrite_model = ChatOpenAI(
-    model="qwen3",
-    base_url="http://localhost:8082/v1",
-    api_key="your_api_key",
+    model=settings.CHAT_MODEL_NAME,
 )
-
+checkpointer = MemorySaver()
 agent = create_agent(
     model=model,
     middleware=[

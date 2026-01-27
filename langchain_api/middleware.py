@@ -7,7 +7,12 @@ from langchain_core.vectorstores import VectorStore
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain.agents import AgentState
 
-from langchain_core.messages import HumanMessage, SystemMessage, BaseMessage, AIMessage
+from langchain_core.messages import (
+    HumanMessage,
+    SystemMessage,
+    BaseMessage,
+    AIMessage,
+)
 from langchain_core.documents import Document
 
 from langgraph.runtime import Runtime
@@ -250,7 +255,6 @@ class RAGMiddleware(AgentMiddleware[CustomState]):
     def before_model(self, state: CustomState, runtime: Runtime):
         """RAG 每次的输入只能有 system 和 human 两个"""
         messages = state["messages"]
-        print("messages: ", messages)
         last_msg: HumanMessage = messages[-1]
         query = last_msg.content
         # 改写问题
