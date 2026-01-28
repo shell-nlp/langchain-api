@@ -31,7 +31,7 @@ agent = create_agent(
 
 config = {"configurable": {"thread_id": "123"}}
 while True:
-    query = input("请输入问题：")
+    query = input("问题：")
     if query == "exit":
         break
     for mode, chunk in agent.stream(
@@ -46,10 +46,8 @@ while True:
         stream_mode=["messages", "updates"],
         config=config,
     ):
-        if mode == "values":  # 处理最终值
-            final_response = chunk
-            print("\n[Final Response]:", final_response, flush=True)
-        elif mode == "messages":  # 只处理消息流
+
+        if mode == "messages":  # 只处理消息流
             msg, metadata = chunk
             if metadata.get("tags", []) == ["rag"]:
                 if msg.content:
@@ -57,5 +55,24 @@ while True:
                     # print(msg.content)
         elif mode == "updates":  # 处理更新流
             update = chunk
-            print(f"\n[Update]: {update}", flush=True)
+            print(f"\n[Update]: {update}")
+            # if "model" in update and not update["model"]["messages"][0].tool_calls:
+            #     # print("ai: ", update["model"]["messages"][0].content, "\n", "-" * 50)
+            #     pass
+            # if "model" in update and update["model"]["messages"][0].tool_calls:
+            #     print(
+            #         "ai: ",
+            #         f"调用工具信息：{update["model"]["messages"][0].tool_calls}",
+            #         "\n",
+            #         "-" * 50,
+            #     )
+            # if "tools" in update:
+
+            #     print(
+            #         "tools: ",
+            #         f"调用工具：{update["tools"]["messages"][0].name} 结果： \n",
+            #         update["tools"]["messages"][0].content,
+            #         "\n",
+            #         "-" * 50,
+            #     )
     print()

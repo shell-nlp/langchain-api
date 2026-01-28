@@ -214,7 +214,9 @@ class RAGMiddleware(AgentMiddleware[CustomState]):
         """
         if self.rewrite_query and self.model:
             new_query = self.model.invoke(
-                REWRITE_QUREY_PROMPT.format(history=messages2str(messages), query=query)
+                REWRITE_QUREY_PROMPT.format(
+                    history=messages2str(messages[-20:]), query=query
+                )
             ).content
             logger.info(f"改写问题：{query} -> {new_query}")
             query = new_query
