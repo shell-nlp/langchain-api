@@ -5,7 +5,7 @@ from langchain.agents.middleware import (
 from langchain_openai import ChatOpenAI
 from langchain_api.middleware import PlanningMiddleware
 from langgraph.checkpoint.memory import MemorySaver
-from langchain_api.settting import settings
+from langchain_api.settings import settings
 
 checkpointer = MemorySaver()
 

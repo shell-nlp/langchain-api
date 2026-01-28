@@ -3,7 +3,7 @@ from langchain.agents import create_agent
 from langchain_api.middleware import RAGMiddleware
 from langchain_api.retriever import vector_store
 from langgraph.checkpoint.memory import MemorySaver
-from langchain_api.settting import settings
+from langchain_api.settings import settings
 import os
 
 os.system("clear")

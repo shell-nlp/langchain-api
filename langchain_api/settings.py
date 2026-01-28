@@ -9,10 +9,20 @@ load_dotenv()
 
 
 class Settings(BaseSettings):
-    # 模型配置
-    OPENAI_API_KEY: str
+    # openAI api_base 和 api_key配置
     OPENAI_API_BASE: str
     CHAT_MODEL_NAME: str
+
+    # Chat模型配置
+    OPENAI_API_KEY: str
+
+    # Embedding模型配置
+    EMBEDDING_MODEL_NAME: str
+
+    # elasticsearch配置
+    ES_URL: str
+    ES_URSR: str
+    ES_PWD: str
 
     model_config = SettingsConfigDict(
         env_file=str(env_path),

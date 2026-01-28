@@ -5,26 +5,25 @@ from langchain_elasticsearch import (
     DenseVectorStrategy,
 )
 from langchain_openai import OpenAIEmbeddings
+from langchain_api.settings import settings
 
 embeddings = OpenAIEmbeddings(
-    model="qwen3-embedding",
-    base_url="http://localhost:8082/v1",
-    api_key="your_api_key",
+    model=settings.EMBEDDING_MODEL_NAME,
 )
 vector_store = ElasticsearchStore(
     embedding=embeddings,
     index_name="236",  # 索引名
-    es_url="http://localhost:9200",  # 或 es_cloud_id, es_user, es_password 等
-    es_user="elastic",
-    es_password="elastic@2024",
+    es_url=settings.ES_URL,  # 或 es_cloud_id, es_user, es_password 等
+    es_user=settings.ES_URSR,
+    es_password=settings.ES_PWD,
     strategy=DenseVectorStrategy(),
 )
 bm25_vector_store = ElasticsearchStore(
     embedding=embeddings,
     index_name="236",  # 索引名
-    es_url="http://localhost:9200",  # 或 es_cloud_id, es_user, es_password 等
-    es_user="elastic",
-    es_password="elastic@2024",
+    es_url=settings.ES_URL,  # 或 es_cloud_id, es_user, es_password 等
+    es_user=settings.ES_URSR,
+    es_password=settings.ES_PWD,
     strategy=BM25Strategy(),
 )
 query = "等节水灌溉方式。\n水资源短缺地区应当严格控制人造河湖等景观用水"
