@@ -1,6 +1,11 @@
+from typing import Literal
 from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
 from langchain_api.agent.agent import Agent
 from langgraph.types import Command
+from pydantic import BaseModel, Field
+from loguru import logger
+import uuid
 import os
 
 os.system("clear")
@@ -8,44 +13,96 @@ agent = Agent().get_agent()
 app = FastAPI()
 
 config = {"configurable": {"thread_id": "123"}}
-for mode, chunk in agent.stream(
-    {
-        "messages": [
-            {
-                "role": "user",
-                "content": """请你执行如下任务：
-    1. 计算 10 + 10 的结果。
-    2. 将结果乘以 5。
-    3. 根据结果生成一个故事。
-    """,
-            }
-        ]
-    },
-    stream_mode=["messages", "updates"],
-    config=config,
-):
-    if mode == "messages":  # 只处理消息流
-        msg, metadata = chunk
-        if metadata.get("tags", []) == ["agent"]:
-            if msg.tool_calls or msg.content:
-                # print(msg.content, end="", flush=True)
-                print(msg.tool_calls)
-    elif mode == "updates":  # 处理更新流
-        update = chunk
-        print(f"\n[Update]: {update}", flush=True)
-# --------------------------------------------
 
-for mode, chunk in agent.stream(
-    Command(resume={"decisions": [{"type": "approve"}]}),
-    stream_mode=["messages", "updates"],
-    config=config,
-):
-    if mode == "messages":  # 只处理消息流
-        msg, metadata = chunk
-        if metadata.get("tags", []) == ["agent"]:
-            if msg.tool_calls or msg.content:
-                # print(msg.content, end="", flush=True)
-                print(msg.tool_calls)
-    elif mode == "updates":  # 处理更新流
-        update = chunk
-        print(f"\n[Update]: {update}", flush=True)
+
+class Request(BaseModel):
+    query: str | None = Field(
+        None,
+        description="用户输入的查询",
+        examples=[
+            "请你执行如下任务：\n 1. 计算 10 + 10 的结果。\n2. 将结果乘以 5。\n 3. 根据结果生成一个故事。"
+        ],
+    )
+    resume: dict | None = Field(
+        None, description="恢复信息", examples=[{"decisions": [{"type": "approve"}]}]
+    )
+    # session_id 默认随机的uuid
+    session_id: str = str(uuid.uuid4())
+
+
+class StreamResponse(BaseModel):
+
+    event: Literal["token", "tool_calls", "tool_output", "__interrupt__"] = "token"
+    data: dict | None = None
+
+
+@app.post("/agent_chat", response_model=StreamResponse)
+async def agent_chat(request: Request):
+    logger.debug(f"request: \n{request.model_dump_json(indent=2)}")
+    config = {"configurable": {"thread_id": f"{request.session_id}"}}
+
+    update = None
+    input = None
+
+    if request.query and request.resume:
+        raise ValueError("query 和 resume 不能同时存在")
+    elif request.query:
+        update = {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": f"""{request.query}""",
+                }
+            ]
+        }
+        input = update
+    elif request.resume:
+        input = Command(resume=request.resume)
+
+    logger.debug(f"update: \n{update}")
+    stream_response = StreamResponse()
+
+    def stream_generator():
+        for mode, chunk in agent.stream(
+            input=input,
+            stream_mode=["messages", "updates"],
+            config=config,
+        ):
+            if mode == "messages":  # 只处理消息流
+                msg, metadata = chunk
+                if metadata.get("tags", []) == ["agent"]:
+                    if msg.content:
+                        stream_response.event = "token"
+                        stream_response.data = {"chunk": msg.content}
+                        yield f"data: {stream_response.model_dump_json()}\n\n"
+            elif mode == "updates":  # 处理更新流
+                # print(f"\n[Update]: {chunk}")
+                if "__interrupt__" in chunk:  # 处理 Human in the Loop
+                    stream_response.event = "__interrupt__"
+                    stream_response.data = {
+                        "__interrupt__": chunk["__interrupt__"][0].value
+                    }
+                    yield f"data: {stream_response.model_dump_json()}\n\n"
+
+                if "model" in chunk and not chunk["model"]["messages"][0].tool_calls:
+                    # 这个是最后一次整体的 tool 内容
+                    ...
+                if "model" in chunk and chunk["model"]["messages"][0].tool_calls:
+                    stream_response.event = "tool_calls"
+                    stream_response.data = {
+                        "tool_calls": chunk["model"]["messages"][0].tool_calls
+                    }
+                    yield f"data: {stream_response.model_dump_json()}\n\n"
+
+                if "tools" in chunk:
+                    stream_response.event = "tool_output"
+                    stream_response.data = {"tool_output": chunk["tools"]["messages"]}
+                    yield f"data: {stream_response.model_dump_json()}\n\n"
+
+    return StreamingResponse(stream_generator(), media_type="text/event-stream")
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(app, host="0.0.0.0", port=7869)

@@ -26,7 +26,6 @@ bm25_vector_store = ElasticsearchStore(
     es_password=settings.ES_PWD,
     strategy=BM25Strategy(),
 )
-query = "等节水灌溉方式。\n水资源短缺地区应当严格控制人造河湖等景观用水"
 
 
 @tool
@@ -43,6 +42,7 @@ def retrieve_context(query: str):
 retrieve_tool = retrieve_context
 
 if __name__ == "__main__":
+    query = "等节水灌溉方式。\n水资源短缺地区应当严格控制人造河湖等景观用水"
 
     r = retrieve_context.invoke(query)
     print(r)
