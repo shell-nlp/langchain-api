@@ -289,10 +289,10 @@ class RAGMiddleware(AgentMiddleware[CustomState]):
         return handler(request.override(system_message=self.system_msg))
 
 
-class TestMiddleware(AgentMiddleware):
+class CallBackMiddleware(AgentMiddleware):
 
     def wrap_model_call(self, request, handler):
-        logger.info(request.system_message)
+        # logger.info(request.system_message)
         return handler(request)
 
 

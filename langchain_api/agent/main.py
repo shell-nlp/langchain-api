@@ -60,6 +60,7 @@ def agent_chat(request: Request):
     stream_response = StreamResponse()
 
     def stream_generator():
+        text = ""
         for mode, chunk in agent.stream(
             input=input,
             stream_mode=["messages", "updates"],
@@ -69,6 +70,7 @@ def agent_chat(request: Request):
                 msg, metadata = chunk
                 if metadata.get("tags", []) == ["agent"]:
                     if msg.content:
+                        text += msg.content
                         stream_response.event = "token"
                         stream_response.data = {"chunk": msg.content}
                         yield f"data: {stream_response.model_dump_json()}\n\n"
@@ -90,11 +92,15 @@ def agent_chat(request: Request):
                         "tool_calls": chunk["model"]["messages"][0].tool_calls
                     }
                     yield f"data: {stream_response.model_dump_json()}\n\n"
+                    text += f"\n{"-"*100}\n"
 
                 if "tools" in chunk:
                     stream_response.event = "tool_output"
                     stream_response.data = {"tool_output": chunk["tools"]["messages"]}
                     yield f"data: {stream_response.model_dump_json()}\n\n"
+                    text += f"\n工具响应： \n{chunk['tools']['messages']}\n{"-"*100}\n"
+
+        logger.info(f"session_id：{request.session_id} \nFinal Response: \n{text}")
 
     return StreamingResponse(stream_generator(), media_type="text/event-stream")
 
