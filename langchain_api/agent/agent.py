@@ -1,9 +1,11 @@
+import os
 from langchain_openai import ChatOpenAI
 from langchain_api.middleware import PlanningMiddleware, CallBackMiddleware
 from langgraph.checkpoint.memory import MemorySaver
 from langchain_api.settings import settings
 from langchain.agents import create_agent
 from pydantic import Field
+from loguru import logger
 
 checkpointer = MemorySaver()
 
@@ -23,11 +25,17 @@ class Agent:
         deep_agent: bool = False,
     ):
         self.model = ChatOpenAI(model=settings.CHAT_MODEL_NAME, tags=["agent"])
-
         tools = [eval_tool]
+        if os.getenv("TAVILY_API_KEY"):
+            logger.info("TAVILY_API_KEY 已配置，将添加 TavilySearch 工具")
+            from langchain_tavily.tavily_search import TavilySearch
+
+            tools.append(TavilySearch())
+
         middleware = [CallBackMiddleware()]
 
         if deep_agent:
+            logger.info("正在使用 DeepAgent")
             from deepagents import create_deep_agent
             from deepagents.backends import FilesystemBackend
 
@@ -39,13 +47,14 @@ class Agent:
                 backend=FilesystemBackend(root_dir=".", virtual_mode=True),
             )
         else:
-            middleware.append(
-                PlanningMiddleware(
-                    model=ChatOpenAI(
-                        model=settings.CHAT_MODEL_NAME,
-                    )
-                ),
-            )
+            logger.info("正在使用 ReactAgent")
+            # middleware.append(
+            #     PlanningMiddleware(
+            #         model=ChatOpenAI(
+            #             model=settings.CHAT_MODEL_NAME,
+            #         )
+            #     ),
+            # )
             self.agent = create_agent(
                 model=self.model,
                 tools=tools,
