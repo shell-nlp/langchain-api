@@ -12,8 +12,6 @@ os.system("clear")
 agent = Agent().get_agent()
 app = FastAPI()
 
-config = {"configurable": {"thread_id": "123"}}
-
 
 class Request(BaseModel):
     query: str | None = Field(
@@ -37,7 +35,7 @@ class StreamResponse(BaseModel):
 
 
 @app.post("/agent_chat", response_model=StreamResponse)
-async def agent_chat(request: Request):
+def agent_chat(request: Request):
     logger.debug(f"request: \n{request.model_dump_json(indent=2)}")
     config = {"configurable": {"thread_id": f"{request.session_id}"}}
 
@@ -59,7 +57,6 @@ async def agent_chat(request: Request):
     elif request.resume:
         input = Command(resume=request.resume)
 
-    logger.debug(f"update: \n{update}")
     stream_response = StreamResponse()
 
     def stream_generator():

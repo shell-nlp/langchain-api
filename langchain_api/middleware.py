@@ -2,7 +2,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from typing import List, NotRequired, TypedDict, Literal
 from langchain_core.messages import HumanMessage, SystemMessage, BaseMessage
-from langchain.agents.middleware import AgentMiddleware, ModelRequest
+from langchain.agents.middleware import AgentMiddleware
 from langchain_core.vectorstores import VectorStore
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain.agents import AgentState
@@ -289,10 +289,17 @@ class RAGMiddleware(AgentMiddleware[CustomState]):
         return handler(request.override(system_message=self.system_msg))
 
 
+class TestMiddleware(AgentMiddleware):
+
+    def wrap_model_call(self, request, handler):
+        logger.info(request.system_message)
+        return handler(request)
+
+
 class PlanningMiddleware(AgentMiddleware):
     """用于在代理中实现规划功能的中间件。每次通过总结上下文信息来规划下一步行动。并将规划结果添加到系统提示中。"""
 
-    def __init__(self, model: str | BaseChatModel | None = None):
+    def __init__(self, model: BaseChatModel):
         from langchain_core.prompts import ChatPromptTemplate
 
         class Output(TypedDict):
