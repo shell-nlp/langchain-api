@@ -72,7 +72,7 @@ def agent_chat(request: Request):
                     if msg.content:
                         text += msg.content
                         stream_response.event = "token"
-                        stream_response.data = {"chunk": msg.content}
+                        stream_response.data = {"token": msg.content, "id": msg.id}
                         yield f"data: {stream_response.model_dump_json()}\n\n"
             elif mode == "updates":  # 处理更新流
                 # print(f"\n[Update]: {chunk}")
@@ -89,14 +89,17 @@ def agent_chat(request: Request):
                 if "model" in chunk and chunk["model"]["messages"][0].tool_calls:
                     stream_response.event = "tool_calls"
                     stream_response.data = {
-                        "tool_calls": chunk["model"]["messages"][0].tool_calls
+                        "tool_calls": chunk["model"]["messages"][0].tool_calls,
+                        "id": chunk["model"]["messages"][0].id,
                     }
                     yield f"data: {stream_response.model_dump_json()}\n\n"
                     text += f"\n{"-"*100}\n"
 
                 if "tools" in chunk:
                     stream_response.event = "tool_output"
-                    stream_response.data = {"tool_output": chunk["tools"]["messages"]}
+                    stream_response.data = {
+                        "tool_output": chunk["tools"]["messages"],
+                    }
                     yield f"data: {stream_response.model_dump_json()}\n\n"
                     text += f"\n工具响应： \n{chunk['tools']['messages']}\n{"-"*100}\n"
 
