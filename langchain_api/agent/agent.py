@@ -1,9 +1,11 @@
 import os
+from typing import List
 from langchain_openai import ChatOpenAI
 from langchain_api.middleware import PlanningMiddleware, CallBackMiddleware
 from langgraph.checkpoint.memory import MemorySaver
 from langchain_api.settings import settings
 from langchain.agents import create_agent
+from langchain.agents.middleware import AgentMiddleware
 from pydantic import Field
 from loguru import logger
 
@@ -22,17 +24,19 @@ class Agent:
     def __init__(
         self,
         system_prompt="你是一个善于使用工具的助手。 你每次只能使用一个工具，禁止一次调用多个工具。",
+        tools: list = [],
+        middleware: List[AgentMiddleware] = [],
         deep_agent: bool = False,
     ):
         self.model = ChatOpenAI(model=settings.CHAT_MODEL_NAME, tags=["agent"])
-        tools = [eval_tool]
+        tools = [eval_tool] + tools
         if os.getenv("TAVILY_API_KEY"):
             logger.info("TAVILY_API_KEY 已配置，将添加 TavilySearch 工具")
             from langchain_tavily.tavily_search import TavilySearch
 
             tools.append(TavilySearch())
 
-        middleware = [CallBackMiddleware()]
+        middleware = [CallBackMiddleware()] + middleware
 
         if deep_agent:
             logger.info("正在使用 DeepAgent")

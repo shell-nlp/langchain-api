@@ -93,7 +93,7 @@ def agent_chat(request: Request):
                         "id": chunk["model"]["messages"][0].id,
                     }
                     yield f"data: {stream_response.model_dump_json()}\n\n"
-                    text += f"\n{"-"*100}\n"
+                    text += f"\n{'-'*100}\n"
 
                 if "tools" in chunk:
                     stream_response.event = "tool_output"
@@ -101,7 +101,7 @@ def agent_chat(request: Request):
                         "tool_output": chunk["tools"]["messages"],
                     }
                     yield f"data: {stream_response.model_dump_json()}\n\n"
-                    text += f"\n工具响应： \n{chunk['tools']['messages']}\n{"-"*100}\n"
+                    text += f"\n工具响应： \n{chunk['tools']['messages']}\n{'-'*100}\n"
 
         logger.info(f"session_id：{request.session_id} \nFinal Response: \n{text}")
 
