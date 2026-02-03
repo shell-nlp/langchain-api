@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Agent Chat - 智能助手</title>
+    <link rel="stylesheet" href="chat_styles.css">
+</head>
+<body>
+    <div class="bg-animation"></div>
+    <div class="grid-bg"></div>
+    
+    <div class="container">
+        <header class="header">
+            <h1>🤖 AI Agent Chat</h1>
+            <p>智能助手 - 支持工具调用和流式响应</p>
+        </header>
+
+        <div class="session-info">
+            <div>
+                <span>会话 ID: </span>
+                <span class="session-id" id="sessionId"></span>
+            </div>
+            <div class="status">
+                <span class="status-dot" id="statusDot"></span>
+                <span id="statusText">就绪</span>
+                <button class="clear-btn" onclick="clearChat()">清空对话</button>
+            </div>
+        </div>
+
+        <div class="interrupt-panel" id="interruptPanel">
+            <div class="interrupt-header">
+                <span>⚠️</span>
+                <span>需要人工确认</span>
+            </div>
+            <div class="interrupt-content" id="interruptContent"></div>
+            <div class="interrupt-buttons">
+                <button class="interrupt-btn approve-btn" onclick="handleInterrupt('approve')">确认继续</button>
+                <button class="interrupt-btn reject-btn" onclick="handleInterrupt('reject')">拒绝</button>
+            </div>
+        </div>
+
+        <div class="chat-container" id="chatContainer">
+            <div class="welcome-message">
+                <h2>👋 欢迎使用 AI Agent Chat</h2>
+                <p>我可以帮您执行各种任务，包括计算、查询、数据处理等。</p>
+                <div class="example-queries">
+                    <div class="example-query" onclick="setQuery('请你执行如下任务：\n1. 计算 10 + 10 的结果\n2. 将结果乘以 5\n3. 根据结果生成一个故事')">🧮 数学计算示例</div>
+                    <div class="example-query" onclick="setQuery('查询今天的天气情况')">🌤️ 天气查询</div>
+                    <div class="example-query" onclick="setQuery('帮我分析一下当前的市场趋势')">📊 数据分析</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="input-container">
+            <div class="input-wrapper">
+                <textarea 
+                    class="message-input" 
+                    id="messageInput" 
+                    placeholder="输入您的问题或任务..."
+                    rows="1"
+                    onkeydown="handleKeyDown(event)"
+                    oninput="autoResize(this)"
+                ></textarea>
+            </div>
+            <button class="send-btn" id="sendBtn" onclick="sendMessage()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
+                </svg>
+                发送
+            </button>
+        </div>
+    </div>
+
+    <script src="chat_app.js"></script>
+</body>
+</html>

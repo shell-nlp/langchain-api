@@ -1,16 +1,35 @@
 from typing import Literal
 from fastapi import FastAPI
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from langchain_api.agent.agent import Agent
 from langgraph.types import Command
 from pydantic import BaseModel, Field
 from loguru import logger
 import uuid
 import os
+from pathlib import Path
 
+root_path = Path(__file__).parent.parent.parent
+
+frontend_path = root_path / "frontend"
 os.system("clear")
 agent = Agent().get_agent()
 app = FastAPI()
+# 将 html 路由到 /
+app.mount(
+    "/web",
+    StaticFiles(
+        directory=frontend_path,
+        html=True,
+    ),
+    name="frontend",
+)
+
+
+@app.get("/")
+def redirect_to_frontend():
+    return RedirectResponse(url="/web/index.html")
 
 
 class Request(BaseModel):
