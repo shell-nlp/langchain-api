@@ -380,7 +380,7 @@ wheels = [
 
 [[package]]
 name = "deepagents"
-version = "0.3.8"
+version = "0.3.9"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
     { name = "langchain" },
@@ -389,9 +389,9 @@ dependencies = [
     { name = "langchain-google-genai" },
     { name = "wcmatch" },
 ]
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/47/69/d8dd80dd5c0c81393cc32623dd51e642c8607ab798276506b3b3e89b1f20/deepagents-0.3.8.tar.gz", hash = "sha256:4b8252f8deaad449ce39426cc2233a597ee079b9b690647a26d128c16d6c6eb8", size = 73956, upload-time = "2026-01-22T18:33:43.905Z" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/78/88/ea165f1cfcdb4cdc83cd7c6ac004fc9d199648f74c523404decf3fa99cbc/deepagents-0.3.9.tar.gz", hash = "sha256:186ed813268bb8d13ca2fbd45863d3e8b926118818326ba680b5b45c5f3661bf", size = 74944, upload-time = "2026-01-28T20:02:47.786Z" }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/a6/6a/35968909bd3184eafee97326bcfd16c99bf9b0e03aadb3327eaf7229ea11/deepagents-0.3.8-py3-none-any.whl", hash = "sha256:7c76205dc014173d795402045b51505517954c7c4a508175f8e4a529f51928cc", size = 79161, upload-time = "2026-01-22T18:33:42.831Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/48/09/8f732d04000d3c6ed1379a35b9daa1eeb227263b624604976904451adb86/deepagents-0.3.9-py3-none-any.whl", hash = "sha256:dc1af5882918c0a20f090e4d7ea0cf8322df026189f6fe5efddd943730b63f81", size = 80173, upload-time = "2026-01-28T20:02:46.8Z" },
 ]
 
 [[package]]
@@ -781,7 +781,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "deepagents", specifier = "==0.3.8" },
+    { name = "deepagents", specifier = "==0.3.9" },
     { name = "elasticsearch", specifier = ">=8.19.3" },
     { name = "fastapi", specifier = ">=0.127.0" },
     { name = "langchain", specifier = ">=1.2.0" },

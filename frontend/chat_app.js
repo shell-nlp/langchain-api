@@ -131,28 +131,54 @@ function addMessage(role, content, options = {}) {
     let contentHtml = '';
     
     if (options.isToolCall && options.toolData) {
-        // 工具调用消息（合并 tool_calls 和 tool_output）
+        // 工具执行 - 紧凑卡片式设计
+        const toolName = options.toolData.toolCall ? options.toolData.toolCall.name : 'tool';
+        const toolIcon = getToolIcon(toolName);
+        
+        // 获取输入参数的简短描述
+        let argsSummary = '';
+        if (options.toolData.toolCall && options.toolData.toolCall.args) {
+            const args = options.toolData.toolCall.args;
+            const argKeys = Object.keys(args);
+            if (argKeys.length > 0) {
+                const firstKey = argKeys[0];
+                const firstValue = String(args[firstKey]).substring(0, 30);
+                argsSummary = argKeys.length > 1 
+                    ? `${firstKey}: ${firstValue}...` 
+                    : `${firstKey}: ${firstValue}`;
+            }
+        }
+        
         contentHtml = `
-            <div class="message-header">
-                <div class="avatar ${avatarClass}">${avatarText}</div>
-                <span class="message-author">${authorName}</span>
-                <span class="message-time">${time}</span>
-            </div>
-            <div class="message-content">
+            <div class="tool-card" onclick="toggleToolCard(this)">
+                <div class="tool-card-header">
+                    <div class="tool-icon">${toolIcon}</div>
+                    <div class="tool-info">
+                        <div class="tool-name">${toolName}</div>
+                        <div class="tool-args">${argsSummary}</div>
+                    </div>
+                    <div class="tool-status success">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                    </div>
+                    <div class="tool-expand-icon">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                    </div>
+                </div>
+                <div class="tool-card-details" style="display: none;">
         `;
         
         // 显示工具调用信息
         if (options.toolData.toolCall) {
             const tool = options.toolData.toolCall;
-            const argsStr = JSON.stringify(tool.args);
+            const argsStr = JSON.stringify(tool.args, null, 2);
             contentHtml += `
-                <div class="tool-execution">
-                    <div class="tool-call-line">
-                        <span class="tool-action">Called the</span>
-                        <span class="tool-name-highlight">${tool.name}</span>
-                        <span class="tool-action">tool with the following input:</span>
-                        <span class="tool-input">${argsStr}</span>
-                    </div>
+                <div class="tool-detail-section">
+                    <div class="tool-detail-label">输入参数</div>
+                    <pre class="tool-detail-code input">${escapeHtml(argsStr)}</pre>
                 </div>
             `;
         }
@@ -165,14 +191,18 @@ function addMessage(role, content, options = {}) {
                     ? output.content 
                     : JSON.stringify(output.content, null, 2);
                 contentHtml += `
-                    <div class="tool-result">
-                        <div class="tool-result-content">${outputContent}</div>
+                    <div class="tool-detail-section">
+                        <div class="tool-detail-label">执行结果</div>
+                        <pre class="tool-detail-code output">${escapeHtml(outputContent)}</pre>
                     </div>
                 `;
             });
         }
         
-        contentHtml += '</div>';
+        contentHtml += `
+                </div>
+            </div>
+        `;
     } else {
         // 普通消息
         contentHtml = `
@@ -190,6 +220,116 @@ function addMessage(role, content, options = {}) {
     container.scrollTop = container.scrollHeight;
     
     return messageDiv;
+}
+
+/**
+ * 切换工具卡片折叠状态
+ * @param {HTMLElement} card - 点击的卡片元素
+ */
+function toggleToolCard(card) {
+    const details = card.querySelector('.tool-card-details');
+    const expandIcon = card.querySelector('.tool-expand-icon');
+    
+    if (details.style.display === 'none') {
+        details.style.display = 'block';
+        expandIcon.style.transform = 'rotate(180deg)';
+        card.classList.add('expanded');
+    } else {
+        details.style.display = 'none';
+        expandIcon.style.transform = 'rotate(0deg)';
+        card.classList.remove('expanded');
+    }
+}
+
+/**
+ * 根据工具名称获取图标
+ * @param {string} toolName - 工具名称
+ * @returns {string} 图标字符
+ */
+function getToolIcon(toolName) {
+    const iconMap = {
+        'search': '🔍',
+        'calculator': '🧮',
+        'calc': '🧮',
+        'math': '📐',
+        'weather': '🌤️',
+        'time': '⏰',
+        'date': '📅',
+        'file': '📄',
+        'read': '📖',
+        'write': '✍️',
+        'edit': '✏️',
+        'delete': '🗑️',
+        'list': '📋',
+        'get': '📥',
+        'post': '📤',
+        'put': '📤',
+        'patch': '📤',
+        'api': '🌐',
+        'http': '🌐',
+        'request': '📡',
+        'fetch': '📡',
+        'database': '🗄️',
+        'db': '🗄️',
+        'query': '🔎',
+        'sql': '🗄️',
+        'python': '🐍',
+        'code': '💻',
+        'exec': '⚡',
+        'run': '▶️',
+        'bash': '💻',
+        'shell': '💻',
+        'terminal': '💻',
+        'git': '📦',
+        'github': '🐙',
+        'email': '📧',
+        'mail': '📧',
+        'send': '📤',
+        'translate': '🌐',
+        'convert': '🔄',
+        'format': '📝',
+        'parse': '🔍',
+        'analyze': '📊',
+        'chart': '📈',
+        'graph': '📊',
+        'plot': '📈',
+        'image': '🖼️',
+        'picture': '🖼️',
+        'photo': '📷',
+        'audio': '🔊',
+        'video': '🎬',
+        'music': '🎵',
+        'map': '🗺️',
+        'location': '📍',
+        'navigate': '🧭',
+        'browser': '🌐',
+        'scrape': '🕷️',
+        'crawl': '🕷️',
+        'extract': '📤',
+        'summarize': '📝',
+        'summary': '📝'
+    };
+    
+    // 尝试匹配工具名称
+    const lowerName = toolName.toLowerCase();
+    for (const [key, icon] of Object.entries(iconMap)) {
+        if (lowerName.includes(key)) {
+            return icon;
+        }
+    }
+    
+    return '🔧';
+}
+
+/**
+ * HTML转义函数
+ * @param {string} text - 需要转义的文本
+ * @returns {string} 转义后的文本
+ */
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
 
 /**

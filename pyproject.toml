@@ -5,7 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "deepagents==0.3.8",
+    "deepagents==0.3.9",
     "elasticsearch>=8.19.3",
     "fastapi>=0.127.0",
     "langchain>=1.2.0",
