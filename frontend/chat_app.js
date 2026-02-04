@@ -582,34 +582,150 @@ function showInterruptPanel(data) {
     const panel = document.getElementById('interruptPanel');
     const content = document.getElementById('interruptContent');
     
-    content.textContent = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
-    panel.classList.add('active');
+    // 清空现有内容
+    content.innerHTML = '';
     
+    if (!data || !data.action_requests || data.action_requests.length === 0) {
+        content.innerHTML = '<p>没有需要批准的操作</p>';
+        panel.classList.add('active');
+        finishProcessing();
+        return;
+    }
+    
+    // 遍历所有需要批准的操作
+    data.action_requests.forEach((action, index) => {
+        const actionDiv = document.createElement('div');
+        actionDiv.className = 'interrupt-action';
+        actionDiv.dataset.actionIndex = index;
+        
+        // 工具名称和图标
+        const toolIcon = getToolIcon(action.name || 'tool');
+        const headerHtml = `
+            <div class="interrupt-action-header">
+                <span class="interrupt-tool-icon">${toolIcon}</span>
+                <span class="interrupt-tool-name">${escapeHtml(action.name || '未知工具')}</span>
+            </div>
+        `;
+        
+        // 工具描述
+        const descHtml = action.description ? `
+            <div class="interrupt-description">${escapeHtml(action.description)}</div>
+        ` : '';
+        
+        // 工具参数（可编辑）
+        const argsHtml = `
+            <div class="interrupt-args-section">
+                <div class="interrupt-section-label">工具参数:</div>
+                <textarea 
+                    class="interrupt-args-editor" 
+                    id="argsEditor${index}"
+                    rows="6"
+                >${JSON.stringify(action.args || {}, null, 2)}</textarea>
+                <div class="interrupt-args-hint">💡 您可以在上方直接编辑参数（JSON格式）</div>
+            </div>
+        `;
+        
+        // 拒绝原因输入框
+        const rejectMessageHtml = `
+            <div class="interrupt-reject-section" id="rejectSection${index}" style="display: none;">
+                <div class="interrupt-section-label">拒绝原因（选填）:</div>
+                <textarea 
+                    class="interrupt-reject-message" 
+                    id="rejectMessage${index}"
+                    rows="3"
+                    placeholder="请说明拒绝的原因或需要修改的地方...\n例如：不，这是错误的，因为...，应该这样做..."
+                ></textarea>
+            </div>
+        `;
+        
+        actionDiv.innerHTML = headerHtml + descHtml + argsHtml + rejectMessageHtml;
+        content.appendChild(actionDiv);
+    });
+    
+    panel.classList.add('active');
     finishProcessing();
 }
 
 /**
  * 处理中断响应
- * @param {string} decision - 决策 ('approve' 或 'reject')
+ * @param {string} decision - 决策 ('approve', 'reject', 或 'edit')
  */
 function handleInterrupt(decision) {
     const panel = document.getElementById('interruptPanel');
+    const content = document.getElementById('interruptContent');
+    const actions = content.querySelectorAll('.interrupt-action');
+    
+    if (actions.length === 0) {
+        alert('没有找到需要处理的操作');
+        return;
+    }
+    
+    // 构建决策列表
+    const decisions = [];
+    let hasError = false;
+    
+    actions.forEach((actionDiv, index) => {
+        const decisionObj = { type: decision };
+        
+        if (decision === 'edit') {
+            // 获取编辑后的参数
+            const argsEditor = document.getElementById(`argsEditor${index}`);
+            try {
+                const editedArgs = JSON.parse(argsEditor.value);
+                const originalName = interruptData.action_requests[index].name;
+                
+                decisionObj.edited_action = {
+                    name: originalName,
+                    args: editedArgs
+                };
+            } catch (e) {
+                alert(`参数 JSON 格式错误（操作 ${index + 1}）:\n${e.message}`);
+                hasError = true;
+                return;
+            }
+        } else if (decision === 'reject') {
+            // 获取拒绝原因（可选）
+            const rejectMessage = document.getElementById(`rejectMessage${index}`);
+            if (rejectMessage && rejectMessage.value.trim()) {
+                decisionObj.message = rejectMessage.value.trim();
+            }
+        }
+        
+        decisions.push(decisionObj);
+    });
+    
+    if (hasError) return;
+    
+    // 关闭面板
     panel.classList.remove('active');
     
     // 发送恢复请求
     const requestData = {
         resume: {
-            decisions: [{ type: decision }]
+            decisions: decisions
         },
         session_id: sessionId
     };
+    
+    // 添加用户操作提示消息
+    let actionText = '';
+    if (decision === 'approve') {
+        actionText = '✅ 已批准操作继续执行';
+    } else if (decision === 'reject') {
+        actionText = '❌ 已拒绝操作';
+        if (decisions[0].message) {
+            actionText += `\n原因: ${decisions[0].message}`;
+        }
+    } else if (decision === 'edit') {
+        actionText = '✏️ 已编辑参数并继续执行';
+    }
+    addMessage('user', actionText);
     
     isProcessing = true;
     setStatus('connecting', '处理中...');
     document.getElementById('sendBtn').disabled = true;
     
     showTypingIndicator();
-    currentMessageDiv = addMessage('ai', '');
     
     fetch(`${API_BASE_URL}/agent_chat`, {
         method: 'POST',
@@ -663,6 +779,31 @@ function handleInterrupt(decision) {
         addMessage('ai', `❌ 请求失败: ${error.message}`);
         finishProcessing();
     });
+}
+
+/**
+ * 切换拒绝原因输入框显示
+ */
+function toggleRejectReason() {
+    const content = document.getElementById('interruptContent');
+    const rejectConfirmArea = document.getElementById('rejectConfirmArea');
+    const actions = content.querySelectorAll('.interrupt-action');
+    
+    // 切换所有操作的拒绝原因输入框
+    let anyVisible = false;
+    actions.forEach((actionDiv, index) => {
+        const rejectSection = document.getElementById(`rejectSection${index}`);
+        if (rejectSection) {
+            const isHidden = rejectSection.style.display === 'none';
+            rejectSection.style.display = isHidden ? 'block' : 'none';
+            if (isHidden) anyVisible = true;
+        }
+    });
+    
+    // 显示或隐藏确认按钮区域
+    if (rejectConfirmArea) {
+        rejectConfirmArea.style.display = anyVisible ? 'block' : 'none';
+    }
 }
 
 /**

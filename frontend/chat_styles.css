@@ -700,10 +700,11 @@ body {
     display: none;
     margin: var(--space-md) 0;
     padding: var(--space-lg);
-    background: linear-gradient(135deg, rgba(239, 68, 68, 0.1), rgba(239, 68, 68, 0.05));
-    border: 1px solid rgba(239, 68, 68, 0.3);
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(245, 158, 11, 0.06));
+    border: 2px solid rgba(245, 158, 11, 0.4);
     border-radius: var(--radius-lg);
     animation: slideIn 0.3s ease-out;
+    box-shadow: 0 8px 24px rgba(245, 158, 11, 0.2);
 }
 
 .interrupt-panel.active {
@@ -716,30 +717,157 @@ body {
 }
 
 .interrupt-header {
-    color: var(--error);
+    color: #d97706;
     font-weight: 600;
-    margin-bottom: var(--space-md);
+    margin-bottom: var(--space-lg);
     display: flex;
     align-items: center;
     gap: var(--space-sm);
-    font-size: 1rem;
+    font-size: 1.1rem;
 }
 
 .interrupt-content {
-    color: var(--text-secondary);
     margin-bottom: var(--space-lg);
-    font-size: 0.9rem;
-    line-height: 1.6;
-    padding: var(--space-md);
-    background: rgba(241, 245, 249, 0.8);
-    border: 1px solid var(--border-light);
-    border-radius: var(--radius-md);
-    font-family: 'JetBrains Mono', monospace;
 }
 
+/* 中断操作卡片 */
+.interrupt-action {
+    background: #ffffff;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    border-radius: var(--radius-md);
+    padding: var(--space-md);
+    margin-bottom: var(--space-md);
+}
+
+.interrupt-action:last-child {
+    margin-bottom: 0;
+}
+
+.interrupt-action-header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    margin-bottom: var(--space-md);
+    padding-bottom: var(--space-sm);
+    border-bottom: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+.interrupt-tool-icon {
+    font-size: 1.5rem;
+}
+
+.interrupt-tool-name {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #b45309;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+}
+
+.interrupt-description {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    line-height: 1.6;
+    padding: var(--space-sm) 0;
+    margin-bottom: var(--space-md);
+    background: rgba(245, 158, 11, 0.05);
+    padding: var(--space-sm) var(--space-md);
+    border-radius: var(--radius-sm);
+    border-left: 3px solid rgba(245, 158, 11, 0.4);
+}
+
+/* 参数编辑区域 */
+.interrupt-args-section {
+    margin-bottom: var(--space-md);
+}
+
+.interrupt-section-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: var(--space-xs);
+    font-weight: 600;
+}
+
+.interrupt-args-editor {
+    width: 100%;
+    padding: var(--space-sm);
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    background: rgba(251, 191, 36, 0.08);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    border-radius: var(--radius-sm);
+    color: #92400e;
+    resize: vertical;
+    min-height: 120px;
+    transition: all 0.2s ease;
+}
+
+.interrupt-args-editor:focus {
+    outline: none;
+    border-color: rgba(245, 158, 11, 0.6);
+    background: #ffffff;
+    box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.1);
+}
+
+.interrupt-args-hint {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-top: var(--space-xs);
+    font-style: italic;
+}
+
+/* 拒绝原因区域 */
+.interrupt-reject-section {
+    margin-top: var(--space-md);
+    padding-top: var(--space-md);
+    border-top: 1px dashed rgba(239, 68, 68, 0.3);
+    animation: slideDown 0.25s ease-out;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.interrupt-reject-message {
+    width: 100%;
+    padding: var(--space-sm);
+    font-family: inherit;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    background: rgba(239, 68, 68, 0.05);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    resize: vertical;
+    min-height: 80px;
+    transition: all 0.2s ease;
+}
+
+.interrupt-reject-message:focus {
+    outline: none;
+    border-color: rgba(239, 68, 68, 0.5);
+    background: #ffffff;
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+}
+
+.interrupt-reject-message::placeholder {
+    color: var(--text-muted);
+}
+
+/* 按钮组 */
 .interrupt-buttons {
     display: flex;
     gap: var(--space-md);
+    margin-bottom: var(--space-sm);
 }
 
 .interrupt-btn {
@@ -751,6 +879,14 @@ body {
     font-weight: 600;
     transition: all 0.2s ease;
     font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-xs);
+}
+
+.interrupt-btn svg {
+    flex-shrink: 0;
 }
 
 .approve-btn {
@@ -764,6 +900,17 @@ body {
     box-shadow: 0 6px 20px rgba(16, 185, 129, 0.4);
 }
 
+.edit-btn {
+    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    color: white;
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+}
+
+.edit-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4);
+}
+
 .reject-btn {
     background: var(--bg-tertiary);
     color: var(--text-secondary);
@@ -774,6 +921,32 @@ body {
     background: rgba(239, 68, 68, 0.1);
     border-color: var(--error);
     color: var(--error);
+}
+
+/* 拒绝确认区域 */
+.interrupt-reject-confirm {
+    margin-top: var(--space-md);
+    padding-top: var(--space-md);
+    border-top: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.reject-confirm-btn {
+    width: 100%;
+    padding: var(--space-md);
+    background: linear-gradient(135deg, var(--error), #b91c1c);
+    color: white;
+    border: none;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.2s ease;
+    font-size: 0.9rem;
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+}
+
+.reject-confirm-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(239, 68, 68, 0.4);
 }
 
 /* 欢迎消息 - 更现代 */
@@ -890,6 +1063,14 @@ pre code {
     
     .interrupt-buttons {
         flex-direction: column;
+    }
+    
+    .interrupt-btn {
+        width: 100%;
+    }
+    
+    .interrupt-args-editor {
+        font-size: 0.8rem;
     }
 }
 
