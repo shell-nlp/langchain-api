@@ -10,6 +10,8 @@ import uuid
 import os
 from pathlib import Path
 
+# from langchain_mcp_adapters.client import MultiServerMCPClient
+
 from langchain_api.agent.agent import CustomContext
 
 root_path = Path(__file__).parent.parent.parent
@@ -43,7 +45,35 @@ class Request(BaseModel):
         ],
     )
     resume: dict | None = Field(
-        None, description="恢复信息", examples=[{"decisions": [{"type": "approve"}]}]
+        None,
+        description="恢复信息",
+        examples=[
+            {"decisions": [{"type": "approve"}]},
+            {
+                "decisions": [
+                    {
+                        "type": "reject",
+                        # 关于操作被拒绝原因的解释
+                        "message": "不，这是错误的，因为......，而是这样做......",
+                    }
+                ]
+            },
+            {
+                "decisions": [
+                    {
+                        "type": "edit",
+                        # 使用工具名称和参数编辑操作
+                        "edited_action": {
+                            # 要调用的工具名称。
+                            # 通常与原始操作相同。
+                            "name": "new_tool_name",
+                            # 要传递给工具的参数。
+                            "args": {"key1": "new_value", "key2": "original_value"},
+                        },
+                    }
+                ]
+            },
+        ],
     )
     # session_id 默认随机的uuid
     session_id: str = str(uuid.uuid4())
@@ -99,6 +129,7 @@ def agent_chat(request: Request):
                         yield f"data: {stream_response.model_dump_json()}\n\n"
             elif mode == "updates":  # 处理更新流
                 # print(f"\n[Update]: {chunk}")
+
                 if "__interrupt__" in chunk:  # 处理 Human in the Loop
                     stream_response.event = "__interrupt__"
                     stream_response.data = {
