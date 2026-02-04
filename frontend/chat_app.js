@@ -403,9 +403,11 @@ function sendMessage() {
     document.getElementById('sendBtn').disabled = true;
     
     // 准备请求数据
+    const internetSearch = document.getElementById('internetSearchCheckbox').checked;
     const requestData = {
         query: query,
-        session_id: sessionId
+        session_id: sessionId,
+        internet_search: internetSearch
     };
     
     // 使用 Fetch API 发送 POST 请求并处理 SSE

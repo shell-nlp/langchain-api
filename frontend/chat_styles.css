@@ -567,6 +567,67 @@ body {
 .input-wrapper {
     flex: 1;
     position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+}
+
+/* 联网搜索开关样式 */
+.internet-search-toggle {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    cursor: pointer;
+    padding: 4px 0;
+    user-select: none;
+}
+
+.internet-search-toggle input {
+    display: none;
+}
+
+.toggle-slider {
+    position: relative;
+    width: 40px;
+    height: 22px;
+    background: #e2e8f0;
+    border-radius: 11px;
+    transition: all 0.3s ease;
+}
+
+.toggle-slider::before {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 18px;
+    height: 18px;
+    background: white;
+    border-radius: 50%;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.internet-search-toggle input:checked + .toggle-slider {
+    background: linear-gradient(135deg, var(--primary), var(--secondary));
+}
+
+.internet-search-toggle input:checked + .toggle-slider::before {
+    transform: translateX(18px);
+}
+
+.toggle-label {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    transition: color 0.2s ease;
+}
+
+.internet-search-toggle input:checked ~ .toggle-label {
+    color: var(--primary);
+}
+
+.internet-search-toggle:hover .toggle-label {
+    color: var(--text-primary);
 }
 
 .message-input {

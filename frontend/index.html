@@ -54,14 +54,19 @@
 
         <div class="input-container">
             <div class="input-wrapper">
-                <textarea 
-                    class="message-input" 
-                    id="messageInput" 
+                <textarea
+                    class="message-input"
+                    id="messageInput"
                     placeholder="输入您的问题或任务..."
                     rows="1"
                     onkeydown="handleKeyDown(event)"
                     oninput="autoResize(this)"
                 ></textarea>
+                <label class="internet-search-toggle">
+                    <input type="checkbox" id="internetSearchCheckbox" checked>
+                    <span class="toggle-slider"></span>
+                    <span class="toggle-label">🌐 联网搜索</span>
+                </label>
             </div>
             <button class="send-btn" id="sendBtn" onclick="sendMessage()">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

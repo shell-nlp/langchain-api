@@ -10,6 +10,8 @@ import uuid
 import os
 from pathlib import Path
 
+from langchain_api.agent.agent import CustomContext
+
 root_path = Path(__file__).parent.parent.parent
 
 frontend_path = root_path / "frontend"
@@ -45,6 +47,7 @@ class Request(BaseModel):
     )
     # session_id 默认随机的uuid
     session_id: str = str(uuid.uuid4())
+    internet_search: bool = Field(False, description="是否允许使用互联网搜索")
 
 
 class StreamResponse(BaseModel):
@@ -84,6 +87,7 @@ def agent_chat(request: Request):
             input=input,
             stream_mode=["messages", "updates"],
             config=config,
+            context=CustomContext(internet_search=request.internet_search),
         ):
             if mode == "messages":  # 只处理消息流
                 msg, metadata = chunk

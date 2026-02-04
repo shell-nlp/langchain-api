@@ -289,13 +289,6 @@ class RAGMiddleware(AgentMiddleware[CustomState]):
         return handler(request.override(system_message=self.system_msg))
 
 
-class CallBackMiddleware(AgentMiddleware):
-
-    def wrap_model_call(self, request, handler):
-        # logger.info(request.system_message)
-        return handler(request)
-
-
 class PlanningMiddleware(AgentMiddleware):
     """用于在代理中实现规划功能的中间件。每次通过总结上下文信息来规划下一步行动。并将规划结果添加到系统提示中。"""
 
