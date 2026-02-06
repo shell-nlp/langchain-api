@@ -46,7 +46,6 @@ while True:
         stream_mode=["messages", "updates"],
         config=config,
     ):
-
         if mode == "messages":  # 只处理消息流
             msg, metadata = chunk
             if metadata.get("tags", []) == ["rag"]:

@@ -10,7 +10,6 @@ from pydantic import Field
 from loguru import logger
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from langchain.agents import AgentState
 
 checkpointer = MemorySaver()
 
@@ -82,6 +81,7 @@ class Agent:
         tools: list = [],
         middleware: List[AgentMiddleware] = [],
         deep_agent: bool = False,
+        skills: list | None = None,
     ):
         system_prompt = system_prompt + get_current_time()
         self.model = ChatOpenAI(model=settings.CHAT_MODEL_NAME, tags=["agent"])
@@ -113,6 +113,7 @@ class Agent:
                 system_prompt=system_prompt,
                 middleware=middleware,
                 backend=FilesystemBackend(root_dir=".", virtual_mode=True),
+                skills=skills,
             )
         else:
             logger.info("正在使用 ReactAgent")
