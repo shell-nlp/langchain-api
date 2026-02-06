@@ -17,10 +17,9 @@ from langchain_api.agent.agent import CustomContext
 root_path = Path(__file__).parent.parent.parent
 
 frontend_path = root_path / "frontend"
-skills_path = root_path / "skills"
-
+skills_path = ["skills"]
 os.system("clear")
-agent = Agent(skills=skills_path, deep_agent=True).get_agent()
+agent = Agent(root_dir=str(root_path), skills=skills_path, deep_agent=True).get_agent()
 app = FastAPI()
 # 将 html 路由到 /
 app.mount(

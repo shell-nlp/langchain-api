@@ -72,6 +72,8 @@ DEFUALT_SYSTEM_PROMPT = """
 - 你善于使用工具,你每次只能使用一个工具，禁止一次调用多个工具。
 - 如果调用工具的结果为空或者工具被禁用，必须将结果为空的原因告诉用户，然后如果问题自身能力可以回答该问题，则依然需要回答。
 """
+DEEP_AGENT_SYSTEM_PROMPT = """你是一个精确执行的智能体，需要判断是否进行工具的调用，如果是闲聊，则直接回答用户的问题，如果是需要提供的技能，需要根据用户的问题来寻找一个合适的技能，并执行技能。 
+"""
 
 
 class Agent:
@@ -82,10 +84,10 @@ class Agent:
         middleware: List[AgentMiddleware] = [],
         deep_agent: bool = False,
         skills: list | None = None,
+        root_dir: str | None = None,
     ):
         system_prompt = system_prompt + get_current_time()
         self.model = ChatOpenAI(model=settings.CHAT_MODEL_NAME, tags=["agent"])
-        tools = [eval_tool] + tools
         if os.getenv("TAVILY_API_KEY"):
             logger.info("TAVILY_API_KEY 已配置，将添加 TavilySearch 工具")
             from langchain_tavily.tavily_search import TavilySearch
@@ -107,12 +109,13 @@ class Agent:
             from deepagents import create_deep_agent
             from deepagents.backends import FilesystemBackend
 
+            system_prompt = DEEP_AGENT_SYSTEM_PROMPT + get_current_time()
             self.agent = create_deep_agent(
                 model=self.model,
                 tools=tools,
                 system_prompt=system_prompt,
                 middleware=middleware,
-                backend=FilesystemBackend(root_dir=".", virtual_mode=True),
+                backend=FilesystemBackend(root_dir=root_dir, virtual_mode=True),
                 skills=skills,
             )
         else:
