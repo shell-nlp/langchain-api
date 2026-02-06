@@ -86,7 +86,7 @@ class StreamResponse(BaseModel):
 
 
 @app.post("/agent_chat", response_model=StreamResponse)
-def agent_chat(request: Request):
+async def agent_chat(request: Request):
     logger.debug(f"request: \n{request.model_dump_json(indent=2)}")
     config = {"configurable": {"thread_id": f"{request.session_id}"}}
 
@@ -110,9 +110,9 @@ def agent_chat(request: Request):
 
     stream_response = StreamResponse()
 
-    def stream_generator():
+    async def stream_generator():
         text = ""
-        for mode, chunk in agent.stream(
+        async for mode, chunk in agent.astream(
             input=input,
             stream_mode=["messages", "updates"],
             config=config,

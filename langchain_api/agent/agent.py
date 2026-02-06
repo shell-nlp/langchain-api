@@ -63,6 +63,9 @@ class BusinessMiddleware(AgentMiddleware):
             request = request.override(tools=filtered_tools)
         return handler(request)
 
+    async def awrap_model_call(self, request, handler):
+        return await self.wrap_model_call(request, handler)
+
 
 DEFUALT_SYSTEM_PROMPT = """
 # 你能够详细地为用户提供有帮助的回答。
