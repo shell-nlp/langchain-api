@@ -2,7 +2,8 @@
 // 处理流式响应、工具调用和 Human-in-the-loop
 
 // 全局状态
-let sessionId = localStorage.getItem('chat_session_id') || generateSessionId();
+let sessionId = generateSessionId();
+console.log('New session initialized:', sessionId);
 let isProcessing = false;
 let currentMessageDiv = null;
 let interruptData = null;
