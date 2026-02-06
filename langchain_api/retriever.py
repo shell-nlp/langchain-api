@@ -1,10 +1,11 @@
 from langchain.tools import tool
 from langchain_elasticsearch import (
-    ElasticsearchStore,
     BM25Strategy,
     DenseVectorStrategy,
+    ElasticsearchStore,
 )
 from langchain_openai import OpenAIEmbeddings
+
 from langchain_api.settings import settings
 
 embeddings = OpenAIEmbeddings(

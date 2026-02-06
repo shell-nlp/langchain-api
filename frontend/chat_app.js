@@ -7,6 +7,7 @@ console.log('New session initialized:', sessionId);
 let isProcessing = false;
 let currentMessageDiv = null;
 let interruptData = null;
+let currentAbortController = null; // 用于中断当前请求
 
 // 跟踪消息 ID 和对应的 DOM 元素
 // 用于处理 token 和 tool_calls ID 相同的情况
@@ -403,6 +404,10 @@ function sendMessage() {
     setStatus('connecting', '处理中...');
     document.getElementById('sendBtn').disabled = true;
     
+    // 显示中断按钮，隐藏发送按钮
+    document.getElementById('sendBtn').style.display = 'none';
+    document.getElementById('abortBtn').style.display = 'flex';
+    
     // 准备请求数据
     const internetSearch = document.getElementById('internetSearchCheckbox').checked;
     const requestData = {
@@ -411,6 +416,9 @@ function sendMessage() {
         internet_search: internetSearch
     };
     
+    // 创建新的 AbortController
+    currentAbortController = new AbortController();
+    
     // 使用 Fetch API 发送 POST 请求并处理 SSE
     fetch(`${API_BASE_URL}/agent_chat`, {
         method: 'POST',
@@ -418,7 +426,8 @@ function sendMessage() {
             'Content-Type': 'application/json',
             'Accept': 'text/event-stream'
         },
-        body: JSON.stringify(requestData)
+        body: JSON.stringify(requestData),
+        signal: currentAbortController.signal
     })
     .then(response => {
         if (!response.ok) {
@@ -459,11 +468,27 @@ function sendMessage() {
         return readStream();
     })
     .catch(error => {
-        console.error('请求失败:', error);
-        hideTypingIndicator();
-        addMessage('ai', `❌ 请求失败: ${error.message}`);
+        if (error.name === 'AbortError') {
+            console.log('请求已被用户中断');
+            hideTypingIndicator();
+            // 不显示中断消息，保持界面简洁
+        } else {
+            console.error('请求失败:', error);
+            hideTypingIndicator();
+            addMessage('ai', `❌ 请求失败: ${error.message}`);
+        }
         finishProcessing();
     });
+}
+
+/**
+ * 中断当前请求
+ */
+function abortRequest() {
+    if (currentAbortController) {
+        currentAbortController.abort();
+        currentAbortController = null;
+    }
 }
 
 /**
@@ -726,7 +751,14 @@ function handleInterrupt(decision) {
     setStatus('connecting', '处理中...');
     document.getElementById('sendBtn').disabled = true;
     
+    // 显示中断按钮，隐藏发送按钮
+    document.getElementById('sendBtn').style.display = 'none';
+    document.getElementById('abortBtn').style.display = 'flex';
+    
     showTypingIndicator();
+    
+    // 创建新的 AbortController
+    currentAbortController = new AbortController();
     
     fetch(`${API_BASE_URL}/agent_chat`, {
         method: 'POST',
@@ -734,7 +766,8 @@ function handleInterrupt(decision) {
             'Content-Type': 'application/json',
             'Accept': 'text/event-stream'
         },
-        body: JSON.stringify(requestData)
+        body: JSON.stringify(requestData),
+        signal: currentAbortController.signal
     })
     .then(response => {
         if (!response.ok) {
@@ -775,9 +808,15 @@ function handleInterrupt(decision) {
         return readStream();
     })
     .catch(error => {
-        console.error('请求失败:', error);
-        hideTypingIndicator();
-        addMessage('ai', `❌ 请求失败: ${error.message}`);
+        if (error.name === 'AbortError') {
+            console.log('请求已被用户中断');
+            hideTypingIndicator();
+            // 不显示中断消息，保持界面简洁
+        } else {
+            console.error('请求失败:', error);
+            hideTypingIndicator();
+            addMessage('ai', `❌ 请求失败: ${error.message}`);
+        }
         finishProcessing();
     });
 }
@@ -814,6 +853,13 @@ function finishProcessing() {
     isProcessing = false;
     setStatus('ready', '就绪');
     document.getElementById('sendBtn').disabled = false;
+    
+    // 恢复发送按钮，隐藏中断按钮
+    document.getElementById('sendBtn').style.display = 'flex';
+    document.getElementById('abortBtn').style.display = 'none';
+    
+    // 清理 AbortController
+    currentAbortController = null;
 }
 
 // 初始化

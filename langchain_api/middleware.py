@@ -1,16 +1,14 @@
 from datetime import datetime
+from typing import List, Literal, NotRequired, TypedDict
 from zoneinfo import ZoneInfo
-from typing import List, NotRequired, TypedDict, Literal
-from langchain_core.messages import HumanMessage, SystemMessage, BaseMessage
-from langchain.agents.middleware import AgentMiddleware
-from langchain_core.vectorstores import VectorStore
-from langchain_core.language_models.chat_models import BaseChatModel
+
 from langchain.agents import AgentState
-
+from langchain.agents.middleware import AgentMiddleware
 from langchain_core.documents import Document
-
+from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
+from langchain_core.vectorstores import VectorStore
 from langgraph.runtime import Runtime
-
 from loguru import logger
 
 RAG_SYSTEM_PROMPT = """<角色>您是一个精通文档引用的问答专家，能够精准依据来源内容构建回答。</角色>

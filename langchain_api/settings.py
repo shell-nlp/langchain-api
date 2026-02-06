@@ -1,5 +1,5 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from dotenv import find_dotenv, load_dotenv
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # 获取.env文件路径
 env_path = find_dotenv(filename=".env", raise_error_if_not_found=True)
