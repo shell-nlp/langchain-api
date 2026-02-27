@@ -1,4 +1,4 @@
-from langchain_openai import ChatOpenAI
+from langchain_deepseek import ChatDeepSeek
 from langchain.agents import create_agent
 from langchain_api.middleware import RAGMiddleware
 from langchain_api.retriever import vector_store
@@ -8,12 +8,17 @@ import os
 
 os.system("clear")
 
-model = ChatOpenAI(
+model = ChatDeepSeek(
     model=settings.CHAT_MODEL_NAME,
     tags=["rag"],
+    api_base=settings.OPENAI_API_BASE,
+    api_key=settings.OPENAI_API_KEY,
 )
-rewrite_model = ChatOpenAI(
+rewrite_model = ChatDeepSeek(
     model=settings.CHAT_MODEL_NAME,
+    tags=["rag"],
+    api_base=settings.OPENAI_API_BASE,
+    api_key=settings.OPENAI_API_KEY,
 )
 checkpointer = MemorySaver()
 agent = create_agent(

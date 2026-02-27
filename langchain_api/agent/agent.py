@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 
 from langchain.agents import create_agent
 from langchain.agents.middleware import AgentMiddleware, HumanInTheLoopMiddleware
-from langchain_openai import ChatOpenAI
+from langchain_deepseek import ChatDeepSeek
 from langgraph.checkpoint.memory import MemorySaver
 from loguru import logger
 from pydantic import Field
@@ -92,7 +92,12 @@ class Agent:
         root_dir: str | None = None,
     ):
         system_prompt = system_prompt + get_current_time()
-        self.model = ChatOpenAI(model=settings.CHAT_MODEL_NAME, tags=["agent"])
+        self.model = ChatDeepSeek(
+            model=settings.CHAT_MODEL_NAME,
+            api_base=settings.OPENAI_API_BASE,
+            api_key=settings.OPENAI_API_KEY,
+            tags=["agent"],
+        )
         if os.getenv("TAVILY_API_KEY"):
             logger.info("TAVILY_API_KEY 已配置，将添加 TavilySearch 工具")
             from langchain_tavily.tavily_search import TavilySearch
@@ -136,3 +141,15 @@ class Agent:
 
     def get_agent(self):
         return self.agent
+
+
+if __name__ == "__main__":
+    model = ChatDeepSeek(
+        model=settings.CHAT_MODEL_NAME,
+        tags=["agent"],
+        api_base=settings.OPENAI_API_BASE,
+        api_key=settings.OPENAI_API_KEY,
+        extra_body={"enable_thinking": False},
+    )
+    for chunk in model.stream("1+1="):
+        print(chunk)

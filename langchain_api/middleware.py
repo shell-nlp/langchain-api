@@ -8,6 +8,7 @@ from langchain_core.documents import Document
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langchain_core.vectorstores import VectorStore
+from langchain_deepseek import ChatDeepSeek
 from langgraph.runtime import Runtime
 from loguru import logger
 
@@ -182,7 +183,7 @@ class RAGMiddleware(AgentMiddleware[CustomState]):
         """
         self.vector_store = vector_store
         self.rewrite_query = rewrite_query
-        self.model = model
+        self.model: ChatDeepSeek = model
         self.retrieve_router = retrieve_router
         self.system_msg = None
         if rewrite_query and not self.model:
@@ -204,11 +205,15 @@ class RAGMiddleware(AgentMiddleware[CustomState]):
             最新的query
         """
         if self.rewrite_query and self.model:
-            new_query = self.model.invoke(
-                REWRITE_QUREY_PROMPT.format(
-                    history=messages2str(messages[-20:]), query=query
+            new_query = (
+                self.model.bind(extra_body={"enable_thinking": False})
+                .invoke(
+                    REWRITE_QUREY_PROMPT.format(
+                        history=messages2str(messages[-20:]), query=query
+                    )
                 )
-            ).content
+                .content
+            )
             logger.info(f"改写问题：{query} -> {new_query}")
             query = new_query
         return query
@@ -234,7 +239,9 @@ class RAGMiddleware(AgentMiddleware[CustomState]):
                 原因: str
                 路由: Literal["LLM", "RAG"]
 
-            structured_model = self.model.with_structured_output(schema=Output)
+            structured_model = self.model.with_structured_output(
+                schema=Output, method="json_mode"
+            ).bind(extra_body={"enable_thinking": False})
             value = structured_model.invoke(
                 [
                     SystemMessage(content=RETRIEVE_ROUTER_PROMPT),
@@ -291,7 +298,9 @@ class PlanningMiddleware(AgentMiddleware):
             已完成的计划: List[str]
             下一步计划: List[str]
 
-        structured_model = model.with_structured_output(schema=Output)
+        structured_model = model.with_structured_output(
+            schema=Output, method="json_mode"
+        )
         prompt = ChatPromptTemplate.from_messages(
             [
                 (

@@ -18,7 +18,7 @@ root_path = Path(__file__).parent.parent.parent
 frontend_path = root_path / "frontend"
 skills_path = ["skills"]
 os.system("clear")
-agent = Agent(root_dir=str(root_path), skills=skills_path, deep_agent=False).get_agent()
+agent = Agent(root_dir=str(root_path), skills=skills_path, deep_agent=True).get_agent()
 app = FastAPI()
 # 将 html 路由到 /
 app.mount(
@@ -121,6 +121,7 @@ async def agent_chat(request: Request):
             if mode == "messages":  # 只处理消息流
                 msg, metadata = chunk
                 if metadata.get("tags", []) == ["agent"]:
+                    print(msg)
                     if msg.content:
                         text += msg.content
                         stream_response.event = "token"
