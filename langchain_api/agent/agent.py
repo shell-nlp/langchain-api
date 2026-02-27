@@ -149,7 +149,7 @@ if __name__ == "__main__":
         tags=["agent"],
         api_base=settings.OPENAI_API_BASE,
         api_key=settings.OPENAI_API_KEY,
-        extra_body={"enable_thinking": False},
+        extra_body={"enable_thinking": True},
     )
     for chunk in model.stream("1+1="):
         print(chunk)
