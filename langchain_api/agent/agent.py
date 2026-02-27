@@ -48,6 +48,7 @@ def eval_tool(expression: str = Field(..., description="要计算的数学表达
 @dataclass
 class CustomContext:
     internet_search: bool
+    deep_thinking: bool = False
 
 
 class BusinessMiddleware(AgentMiddleware):
@@ -55,12 +56,25 @@ class BusinessMiddleware(AgentMiddleware):
 
     def wrap_model_call(self, request, handler):
         context: CustomContext = request.runtime.context
+        logger.info(context)
         if not context.internet_search:
             # 禁用互联网搜索相关的工具调用
             filtered_tools = [
                 tool for tool in request.tools if tool.name != "tavily_search"
             ]
             request = request.override(tools=filtered_tools)
+
+        # 处理深度思考
+        if context.deep_thinking:
+            # 为模型调用添加深度思考参数
+            if hasattr(request, "model_settings"):
+                model_settings = request.model_settings.copy()
+            else:
+                model_settings = {}
+            model_settings["extra_body"] = model_settings.get("extra_body", {})
+            model_settings["extra_body"]["enable_thinking"] = True
+            request = request.override(model_settings=model_settings)
+
         return handler(request)
 
     async def awrap_model_call(self, request, handler):
@@ -97,6 +111,7 @@ class Agent:
             api_base=settings.OPENAI_API_BASE,
             api_key=settings.OPENAI_API_KEY,
             tags=["agent"],
+            extra_body={"enable_thinking": False},
         )
         if os.getenv("TAVILY_API_KEY"):
             logger.info("TAVILY_API_KEY 已配置，将添加 TavilySearch 工具")

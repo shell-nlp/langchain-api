@@ -78,6 +78,7 @@ class Request(BaseModel):
     # session_id 默认随机的uuid
     session_id: str = str(uuid.uuid4())
     internet_search: bool = Field(False, description="是否允许使用互联网搜索")
+    deep_thinking: bool = Field(False, description="是否启用深度思考")
 
 
 class StreamResponse(BaseModel):
@@ -118,13 +119,17 @@ async def agent_chat(request: Request):
             input=input,
             stream_mode=["messages", "updates"],
             config=config,
-            context=CustomContext(internet_search=request.internet_search),
+            context=CustomContext(
+                internet_search=request.internet_search,
+                deep_thinking=request.deep_thinking,
+            ),
         ):
             if mode == "messages":  # 只处理消息流
                 msg, metadata = chunk
                 if metadata.get("tags", []) == ["agent"]:
-                    # reasoning_content 部分
+                    # reasoning_content 部分,reasoning_content 是单个token
                     if msg.additional_kwargs.get("reasoning_content"):
+                        # 直接使用reasoning_content作为单个token
                         stream_response.event = "reasoning_token"
                         stream_response.data = {
                             "token": msg.additional_kwargs["reasoning_content"],
@@ -132,7 +137,7 @@ async def agent_chat(request: Request):
                         }
                         yield f"data: {stream_response.model_dump_json()}\n\n"
                     if msg.content:
-                        text += msg.content
+                        # 直接使用msg.content作为单个token
                         stream_response.event = "token"
                         stream_response.data = {"token": msg.content, "id": msg.id}
                         yield f"data: {stream_response.model_dump_json()}\n\n"

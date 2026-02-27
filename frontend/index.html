@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Agent Chat - 智能助手</title>
-    <link rel="stylesheet" href="chat_styles.css">
+    <link rel="stylesheet" href="chat_styles.css?v=1.0.4">
 </head>
 <body>
     <div class="bg-animation"></div>
@@ -91,6 +91,11 @@
                     <span class="toggle-slider"></span>
                     <span class="toggle-label">🌐 联网搜索</span>
                 </label>
+                <label class="deep-thinking-toggle">
+                    <input type="checkbox" id="deepThinkingCheckbox">
+                    <span class="toggle-slider"></span>
+                    <span class="toggle-label">🧠 深度思考</span>
+                </label>
             </div>
             <button class="send-btn" id="sendBtn" onclick="sendMessage()">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -109,6 +114,6 @@
         </div>
     </div>
 
-    <script src="chat_app.js?v=1.0.3"></script>
+    <script src="chat_app.js?v=1.0.4"></script>
 </body>
 </html>

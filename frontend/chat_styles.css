@@ -340,7 +340,7 @@ body {
     background: linear-gradient(135deg, #ffffff, rgba(245, 158, 11, 0.06));
 }
 
-/* 工具卡片 - 现代化紧凑设计 */
+/*工具卡片 -现化紧凑设计 */
 .tool-card {
     margin: var(--space-sm) 0;
     background: linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(245, 158, 11, 0.05));
@@ -349,6 +349,12 @@ body {
     overflow: hidden;
     cursor: pointer;
     transition: all 0.2s ease;
+}
+
+/*工具卡片在深度思考区域中的特殊样式 */
+.reasoning-container .tool-card {
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(245, 158, 11, 0.08));
+    border: 1px solid rgba(245, 158, 11, 0.4);
 }
 
 .tool-card:hover {
@@ -628,6 +634,102 @@ body {
 
 .internet-search-toggle:hover .toggle-label {
     color: var(--text-primary);
+}
+
+/* 深度思考开关样式 */
+.deep-thinking-toggle {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    cursor: pointer;
+    padding: 4px 0;
+    user-select: none;
+}
+
+.deep-thinking-toggle input {
+    display: none;
+}
+
+.deep-thinking-toggle input:checked + .toggle-slider {
+    background: linear-gradient(135deg, var(--accent), #0e7490);
+}
+
+.deep-thinking-toggle input:checked ~ .toggle-label {
+    color: var(--accent);
+}
+
+.deep-thinking-toggle:hover .toggle-label {
+    color: var(--text-primary);
+}
+
+/*深思考区域样式 */
+.message .reasoning-container {
+    background: linear-gradient(135deg, rgba(148, 163, 184, 0.08), rgba(148, 163, 184, 0.03));
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: var(--radius-lg);
+    margin: var(--space-sm) 0 var(--space-md) 48px;
+    animation: messageSlide 0.3s ease-out;
+    overflow: hidden;
+}
+
+.message .reasoning-header {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-sm);
+    padding: var(--space-sm) var(--space-md);
+    background: rgba(148, 163, 184, 0.1);
+    border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.message .reasoning-header:hover {
+    background: rgba(148, 163, 184, 0.15);
+}
+
+.message .reasoning-toggle {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    padding: 4px 12px;
+    background: rgba(255, 255, 255, 0.7);
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    border-radius: var(--radius-full);
+    font-size: 0.8rem;
+    color: #64748b;
+    transition: all 0.2s ease;
+}
+
+.message .reasoning-toggle:hover {
+    background: rgba(255, 255, 255, 0.9);
+    border-color: rgba(148, 163, 184, 0.5);
+}
+
+.message .reasoning-toggle-icon {
+    transition: transform 0.3s ease;
+}
+
+.message .reasoning-content-wrapper {
+    padding: var(--space-md);
+    transition: all 0.3s ease;
+}
+
+.message .reasoning-content {
+    background: rgba(255, 255, 255, 0.6);
+    border: 1px solid rgba(148, 163, 184, 0.15);
+    border-radius: var(--radius-md);
+    padding: var(--space-md);
+    font-style: italic;
+    color: #475569;
+    line-height: 1.7;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    font-size: 0.9rem;
+}
+
+.message .reasoning-container.expanded {
+    background: linear-gradient(135deg, rgba(148, 163, 184, 0.12), rgba(148, 163, 184, 0.06));
 }
 
 .message-input {

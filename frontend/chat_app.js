@@ -1,13 +1,15 @@
 // AI Agent Chat 应用程序
 // 处理流式响应、工具调用和 Human-in-the-loop
 
-// 全局状态
+//全局状态
 let sessionId = generateSessionId();
 console.log('New session initialized:', sessionId);
 let isProcessing = false;
 let currentMessageDiv = null;
 let interruptData = null;
 let currentAbortController = null; // 用于中断当前请求
+let currentReasoningDiv = null; // 当前深度思考区域
+let isReasoningCollapsed = false; //思考是否折叠
 
 // 跟踪消息 ID 和对应的 DOM 元素
 // 用于处理 token 和 tool_calls ID 相同的情况
@@ -108,12 +110,13 @@ function clearChat() {
  * @param {boolean} options.isToolCall - 是否是工具调用消息
  * @param {Object} options.toolData - 工具数据
  * @param {string} options.messageId - 消息 ID（用于跟踪）
+ * @param {string} options.reasoningContent - 深度思考内容
  * @returns {HTMLElement} 消息 DOM 元素
  */
 function addMessage(role, content, options = {}) {
     const container = document.getElementById('chatContainer');
     
-    // 移除欢迎消息
+    //移除欢迎消息
     const welcomeMsg = container.querySelector('.welcome-message');
     if (welcomeMsg) welcomeMsg.remove();
 
@@ -133,7 +136,7 @@ function addMessage(role, content, options = {}) {
     let contentHtml = '';
     
     if (options.isToolCall && options.toolData) {
-        // 工具执行 - 紧凑卡片式设计
+        //工具执行 -紧卡片式设计
         const toolName = options.toolData.toolCall ? options.toolData.toolCall.name : 'tool';
         const toolIcon = getToolIcon(toolName);
         
@@ -173,7 +176,7 @@ function addMessage(role, content, options = {}) {
                 <div class="tool-card-details" style="display: none;">
         `;
         
-        // 显示工具调用信息
+        //显示工具调用信息
         if (options.toolData.toolCall) {
             const tool = options.toolData.toolCall;
             const argsStr = JSON.stringify(tool.args, null, 2);
@@ -206,13 +209,35 @@ function addMessage(role, content, options = {}) {
             </div>
         `;
     } else {
-        // 普通消息
+        //普通消息
         contentHtml = `
             <div class="message-header">
                 <div class="avatar ${avatarClass}">${avatarText}</div>
                 <span class="message-author">${authorName}</span>
                 <span class="message-time">${time}</span>
             </div>
+        `;
+        
+        // 如果有深度思考内容，添加深度思考区域
+        if (options.reasoningContent) {
+            contentHtml += `
+                <div class="reasoning-container">
+                    <div class="reasoning-header" onclick="toggleReasoning(this)">
+                        <div class="reasoning-toggle">
+                            <span class="reasoning-toggle-text">展开思考</span>
+                            <svg class="reasoning-toggle-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="6 9 12 15 18 9"></polyline>
+                            </svg>
+                        </div>
+                    </div>
+                    <div class="reasoning-content-wrapper" style="display: none;">
+                        <div class="reasoning-content">${options.reasoningContent}</div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        contentHtml += `
             <div class="message-content">${content}</div>
         `;
     }
@@ -410,10 +435,12 @@ function sendMessage() {
     
     // 准备请求数据
     const internetSearch = document.getElementById('internetSearchCheckbox').checked;
+    const deepThinking = document.getElementById('deepThinkingCheckbox').checked;
     const requestData = {
         query: query,
         session_id: sessionId,
-        internet_search: internetSearch
+        internet_search: internetSearch,
+        deep_thinking: deepThinking
     };
     
     // 创建新的 AbortController
@@ -492,7 +519,46 @@ function abortRequest() {
 }
 
 /**
- * 处理流式事件
+ *切换深度思考区域的折叠状态
+ * @param {HTMLElement} header - 点击的深度思考头部元素
+ */
+function toggleReasoning(header) {
+    console.log('切换深度思考折叠状态');
+    const reasoningContainer = header.closest('.reasoning-container');
+    if (!reasoningContainer) {
+        console.log('没有找到深度思考区域');
+        return;
+    }
+    
+    const contentWrapper = reasoningContainer.querySelector('.reasoning-content-wrapper');
+    const toggleText = reasoningContainer.querySelector('.reasoning-toggle-text');
+    const toggleIcon = reasoningContainer.querySelector('.reasoning-toggle-icon');
+    
+    const isCollapsed = contentWrapper.style.display === 'none';
+    
+    if (isCollapsed) {
+        // 展开状态
+        console.log('切换到展开状态');
+        contentWrapper.style.display = 'block';
+        toggleText.textContent = '折叠思考';
+        toggleIcon.style.transform = 'rotate(180deg)';
+        reasoningContainer.classList.add('expanded');
+    } else {
+        // 折叠状态
+        console.log('切换到折叠状态');
+        contentWrapper.style.display = 'none';
+        toggleText.textContent = '展开思考';
+        toggleIcon.style.transform = 'rotate(0deg)';
+        reasoningContainer.classList.remove('expanded');
+    }
+    
+    //滚动到可见区域
+    const container = document.getElementById('chatContainer');
+    container.scrollTop = container.scrollHeight;
+}
+
+/**
+ *处理流式事件
  * @param {Object} event - 事件对象
  */
 function handleStreamEvent(event) {
@@ -500,20 +566,58 @@ function handleStreamEvent(event) {
     
     switch (event.event) {
         case 'token':
-            // 处理 token 流
+            //处理 token流
+            console.log('处理 token 事件:', event.data);
             if (event.data && event.data.token) {
                 const messageId = event.data.id;
                 
                 // 检查是否已经有相同 ID 的消息
                 if (messageIdMap.has(messageId)) {
-                    // 更新现有消息
+                    // 更新现有消息的内容
                     const existingDiv = messageIdMap.get(messageId);
                     const contentDiv = existingDiv.querySelector('.message-content');
-                    contentDiv.textContent += event.data.token;
+                    if (contentDiv) {
+                        contentDiv.textContent += event.data.token;
+                        console.log('更新消息内容:', event.data.token);
+                    }
                 } else {
-                    // 创建新消息并记录 ID
+                    // 创建新消息（没有深度思考内容的情况）
+                    console.log('创建新消息');
                     currentMessageDiv = addMessage('ai', event.data.token, { messageId });
                     messageIdMap.set(messageId, currentMessageDiv);
+                    console.log('新消息创建完成:', currentMessageDiv);
+                }
+                
+                // 自动滚动
+                const container = document.getElementById('chatContainer');
+                container.scrollTop = container.scrollHeight;
+            }
+            break;
+            
+        case 'reasoning_token':
+            //处理深度思考 token流
+            console.log('处理 reasoning_token 事件:', event.data);
+            if (event.data && event.data.token) {
+                const messageId = event.data.id;
+                
+                // 检查是否已经有相同 ID 的消息
+                if (messageIdMap.has(messageId)) {
+                    // 更新现有消息的深度思考内容
+                    const existingDiv = messageIdMap.get(messageId);
+                    const reasoningContentDiv = existingDiv.querySelector('.reasoning-content');
+                    if (reasoningContentDiv) {
+                        reasoningContentDiv.textContent += event.data.token;
+                        console.log('更新现有深度思考内容');
+                    }
+                } else {
+                    // 创建新消息并显示深度思考内容
+                    console.log('创建新消息并显示深度思考内容');
+                    currentMessageDiv = addMessage('ai', '', { 
+                        messageId, 
+                        reasoningContent: event.data.token 
+                    });
+                    messageIdMap.set(messageId, currentMessageDiv);
+                    console.log('新消息创建完成:', currentMessageDiv);
                 }
                 
                 // 自动滚动
@@ -847,14 +951,14 @@ function toggleRejectReason() {
 }
 
 /**
- * 完成处理
+ *完成处理
  */
 function finishProcessing() {
     isProcessing = false;
     setStatus('ready', '就绪');
     document.getElementById('sendBtn').disabled = false;
     
-    // 恢复发送按钮，隐藏中断按钮
+    //恢复发送按钮，隐藏中断按钮
     document.getElementById('sendBtn').style.display = 'flex';
     document.getElementById('abortBtn').style.display = 'none';
     
