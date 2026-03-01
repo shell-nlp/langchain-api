@@ -221,16 +221,16 @@ function addMessage(role, content, options = {}) {
         // 如果有深度思考内容，添加深度思考区域
         if (options.reasoningContent) {
             contentHtml += `
-                <div class="reasoning-container">
+                <div class="reasoning-container expanded">
                     <div class="reasoning-header" onclick="toggleReasoning(this)">
                         <div class="reasoning-toggle">
-                            <span class="reasoning-toggle-text">展开思考</span>
-                            <svg class="reasoning-toggle-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <span class="reasoning-toggle-text">折叠思考</span>
+                            <svg class="reasoning-toggle-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="transform: rotate(180deg);">
                                 <polyline points="6 9 12 15 18 9"></polyline>
                             </svg>
                         </div>
                     </div>
-                    <div class="reasoning-content-wrapper" style="display: none;">
+                    <div class="reasoning-content-wrapper" style="display: block;">
                         <div class="reasoning-content">${options.reasoningContent}</div>
                     </div>
                 </div>
@@ -605,9 +605,20 @@ function handleStreamEvent(event) {
                     // 更新现有消息的深度思考内容
                     const existingDiv = messageIdMap.get(messageId);
                     const reasoningContentDiv = existingDiv.querySelector('.reasoning-content');
+                    const reasoningContentWrapper = existingDiv.querySelector('.reasoning-content-wrapper');
+                    const reasoningContainer = existingDiv.querySelector('.reasoning-container');
+                    const toggleText = existingDiv.querySelector('.reasoning-toggle-text');
+                    const toggleIcon = existingDiv.querySelector('.reasoning-toggle-icon');
                     if (reasoningContentDiv) {
                         reasoningContentDiv.textContent += event.data.token;
                         console.log('更新现有深度思考内容');
+                    }
+                    // 确保深度思考区域是展开状态
+                    if (reasoningContentWrapper && reasoningContentWrapper.style.display === 'none') {
+                        reasoningContentWrapper.style.display = 'block';
+                        if (toggleText) toggleText.textContent = '折叠思考';
+                        if (toggleIcon) toggleIcon.style.transform = 'rotate(180deg)';
+                        if (reasoningContainer) reasoningContainer.classList.add('expanded');
                     }
                 } else {
                     // 创建新消息并显示深度思考内容
