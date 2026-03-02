@@ -18,6 +18,12 @@ const messageIdMap = new Map();
 // 暂存工具调用信息，等待 tool_output 合并显示
 const pendingToolCalls = new Map();
 
+// 跟踪每个消息的累积内容，用于 Markdown 渲染
+const messageContentMap = new Map();
+
+// 跟踪每个消息的累积思考内容，用于 Markdown 渲染
+const reasoningContentMap = new Map();
+
 // API 基础 URL
 const API_BASE_URL = window.location.origin.includes('localhost') 
     ? 'http://localhost:7869' 
@@ -96,6 +102,12 @@ function clearChat() {
     
     // 清空消息 ID 映射
     messageIdMap.clear();
+    
+    // 清空内容映射
+    messageContentMap.clear();
+    
+    // 清空思考内容映射
+    reasoningContentMap.clear();
     
     // 生成新会话 ID
     sessionId = generateSessionId();
@@ -576,8 +588,15 @@ function handleStreamEvent(event) {
                     // 更新现有消息的内容
                     const existingDiv = messageIdMap.get(messageId);
                     const contentDiv = existingDiv.querySelector('.message-content');
+                    
+                    // 累积内容
+                    let accumulatedContent = messageContentMap.get(messageId) || '';
+                    accumulatedContent += event.data.token;
+                    messageContentMap.set(messageId, accumulatedContent);
+                    
                     if (contentDiv) {
-                        contentDiv.textContent += event.data.token;
+                        // 使用 marked.js 渲染 Markdown
+                        contentDiv.innerHTML = marked.parse(accumulatedContent);
                         console.log('更新消息内容:', event.data.token);
                     }
                 } else {
@@ -585,6 +604,14 @@ function handleStreamEvent(event) {
                     console.log('创建新消息');
                     currentMessageDiv = addMessage('ai', event.data.token, { messageId });
                     messageIdMap.set(messageId, currentMessageDiv);
+                    // 初始化内容映射
+                    messageContentMap.set(messageId, event.data.token);
+                    
+                    // 立即渲染 Markdown
+                    const contentDiv = currentMessageDiv.querySelector('.message-content');
+                    if (contentDiv) {
+                        contentDiv.innerHTML = marked.parse(event.data.token);
+                    }
                     console.log('新消息创建完成:', currentMessageDiv);
                 }
                 
@@ -609,8 +636,15 @@ function handleStreamEvent(event) {
                     const reasoningContainer = existingDiv.querySelector('.reasoning-container');
                     const toggleText = existingDiv.querySelector('.reasoning-toggle-text');
                     const toggleIcon = existingDiv.querySelector('.reasoning-toggle-icon');
+                    
+                    // 累积思考内容
+                    let accumulatedReasoning = reasoningContentMap.get(messageId) || '';
+                    accumulatedReasoning += event.data.token;
+                    reasoningContentMap.set(messageId, accumulatedReasoning);
+                    
                     if (reasoningContentDiv) {
-                        reasoningContentDiv.textContent += event.data.token;
+                        // 使用 marked.js 渲染 Markdown
+                        reasoningContentDiv.innerHTML = marked.parse(accumulatedReasoning);
                         console.log('更新现有深度思考内容');
                     }
                     // 确保深度思考区域是展开状态
@@ -628,6 +662,14 @@ function handleStreamEvent(event) {
                         reasoningContent: event.data.token 
                     });
                     messageIdMap.set(messageId, currentMessageDiv);
+                    // 初始化思考内容映射
+                    reasoningContentMap.set(messageId, event.data.token);
+                    
+                    // 立即渲染 Markdown
+                    const reasoningContentDiv = currentMessageDiv.querySelector('.reasoning-content');
+                    if (reasoningContentDiv) {
+                        reasoningContentDiv.innerHTML = marked.parse(event.data.token);
+                    }
                     console.log('新消息创建完成:', currentMessageDiv);
                 }
                 

@@ -720,12 +720,127 @@ body {
     border: 1px solid rgba(148, 163, 184, 0.15);
     border-radius: var(--radius-md);
     padding: var(--space-md);
-    font-style: italic;
     color: #475569;
     line-height: 1.7;
-    white-space: pre-wrap;
     word-wrap: break-word;
     font-size: 0.9rem;
+}
+
+/* 思考内容中的 Markdown 样式 */
+.message .reasoning-content h1,
+.message .reasoning-content h2,
+.message .reasoning-content h3,
+.message .reasoning-content h4,
+.message .reasoning-content h5,
+.message .reasoning-content h6 {
+    margin-top: var(--space-md);
+    margin-bottom: var(--space-xs);
+    font-weight: 600;
+    color: #475569;
+    line-height: 1.3;
+}
+
+.message .reasoning-content h1 {
+    font-size: 1.4rem;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.3);
+    padding-bottom: var(--space-xs);
+}
+
+.message .reasoning-content h2 {
+    font-size: 1.2rem;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+    padding-bottom: 2px;
+}
+
+.message .reasoning-content h3 {
+    font-size: 1.1rem;
+}
+
+.message .reasoning-content h4 {
+    font-size: 1rem;
+}
+
+.message .reasoning-content p {
+    margin-bottom: var(--space-sm);
+}
+
+.message .reasoning-content ul,
+.message .reasoning-content ol {
+    margin: var(--space-sm) 0;
+    padding-left: var(--space-md);
+}
+
+.message .reasoning-content ul {
+    list-style-type: disc;
+}
+
+.message .reasoning-content ol {
+    list-style-type: decimal;
+}
+
+.message .reasoning-content li {
+    margin-bottom: 2px;
+    line-height: 1.6;
+}
+
+.message .reasoning-content li::marker {
+    color: #64748b;
+}
+
+.message .reasoning-content blockquote {
+    margin: var(--space-sm) 0;
+    padding: var(--space-sm) var(--space-md);
+    border-left: 3px solid #64748b;
+    background: rgba(148, 163, 184, 0.1);
+    color: #64748b;
+    font-style: italic;
+}
+
+.message .reasoning-content blockquote p {
+    margin-bottom: 0;
+}
+
+.message .reasoning-content code {
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    color: #0891b2;
+    font-size: 0.85em;
+    background: rgba(8, 145, 178, 0.1);
+    padding: 1px 4px;
+    border-radius: 3px;
+}
+
+.message .reasoning-content pre {
+    background: #334155;
+    padding: var(--space-sm);
+    border-radius: var(--radius-sm);
+    overflow-x: auto;
+    margin: var(--space-sm) 0;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 0.8rem;
+    line-height: 1.5;
+}
+
+.message .reasoning-content pre code {
+    background: transparent;
+    padding: 0;
+    color: #e2e8f0;
+}
+
+.message .reasoning-content strong {
+    font-weight: 600;
+    color: #334155;
+}
+
+.message .reasoning-content em {
+    font-style: italic;
+    color: #64748b;
+}
+
+.message .reasoning-content hr {
+    margin: var(--space-md) 0;
+    border: none;
+    border-top: 1px solid rgba(148, 163, 184, 0.3);
 }
 
 .message .reasoning-container.expanded {
@@ -1263,4 +1378,219 @@ pre code {
     color: white;
     border-color: var(--primary);
     transform: translateY(-2px);
+}
+
+/* Markdown 渲染样式 */
+.message-content h1,
+.message-content h2,
+.message-content h3,
+.message-content h4,
+.message-content h5,
+.message-content h6 {
+    margin-top: var(--space-lg);
+    margin-bottom: var(--space-sm);
+    font-weight: 600;
+    color: var(--text-primary);
+    line-height: 1.3;
+}
+
+.message-content h1 {
+    font-size: 1.8rem;
+    border-bottom: 2px solid var(--border-light);
+    padding-bottom: var(--space-sm);
+}
+
+.message-content h2 {
+    font-size: 1.5rem;
+    border-bottom: 1px solid var(--border-light);
+    padding-bottom: var(--space-xs);
+}
+
+.message-content h3 {
+    font-size: 1.25rem;
+}
+
+.message-content h4 {
+    font-size: 1.1rem;
+}
+
+.message-content h5 {
+    font-size: 1rem;
+}
+
+.message-content h6 {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.message-content p {
+    margin-bottom: var(--space-md);
+}
+
+.message-content ul,
+.message-content ol {
+    margin: var(--space-md) 0;
+    padding-left: var(--space-lg);
+}
+
+.message-content ul {
+    list-style-type: disc;
+}
+
+.message-content ol {
+    list-style-type: decimal;
+}
+
+.message-content li {
+    margin-bottom: var(--space-xs);
+    line-height: 1.7;
+}
+
+.message-content li::marker {
+    color: var(--primary);
+}
+
+.message-content blockquote {
+    margin: var(--space-md) 0;
+    padding: var(--space-md) var(--space-lg);
+    border-left: 4px solid var(--primary);
+    background: rgba(99, 102, 241, 0.06);
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+.message-content blockquote p {
+    margin-bottom: 0;
+}
+
+.message-content table {
+    width: 100%;
+    margin: var(--space-md) 0;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+
+.message-content th,
+.message-content td {
+    padding: var(--space-sm) var(--space-md);
+    border: 1px solid var(--border-light);
+    text-align: left;
+}
+
+.message-content th {
+    background: rgba(99, 102, 241, 0.08);
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.message-content tr:nth-child(even) {
+    background: rgba(241, 245, 249, 0.5);
+}
+
+.message-content tr:hover {
+    background: rgba(99, 102, 241, 0.05);
+}
+
+.message-content a {
+    color: var(--primary);
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    transition: all 0.2s ease;
+}
+
+.message-content a:hover {
+    color: var(--primary-dark);
+    border-bottom-color: var(--primary);
+}
+
+.message-content hr {
+    margin: var(--space-lg) 0;
+    border: none;
+    border-top: 2px solid var(--border-light);
+}
+
+.message-content strong {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.message-content em {
+    font-style: italic;
+    color: var(--text-secondary);
+}
+
+.message-content del {
+    text-decoration: line-through;
+    color: var(--text-muted);
+}
+
+.message-content code {
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    color: var(--accent);
+    font-size: 0.9em;
+    background: rgba(6, 182, 212, 0.12);
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+}
+
+.message-content pre {
+    background: #1e293b;
+    padding: var(--space-md);
+    border-radius: var(--radius-md);
+    overflow-x: auto;
+    margin: var(--space-md) 0;
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 0.85rem;
+    line-height: 1.6;
+}
+
+.message-content pre code {
+    background: transparent;
+    padding: 0;
+    color: #e2e8f0;
+}
+
+.message-content img {
+    max-width: 100%;
+    height: auto;
+    border-radius: var(--radius-md);
+    margin: var(--space-md) 0;
+    box-shadow: var(--shadow-md);
+}
+
+.message-content details {
+    margin: var(--space-md) 0;
+    padding: var(--space-sm);
+    background: rgba(241, 245, 249, 0.5);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-md);
+}
+
+.message-content summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--text-primary);
+    padding: var(--space-xs);
+    transition: color 0.2s ease;
+}
+
+.message-content summary:hover {
+    color: var(--primary);
+}
+
+.message-content details[open] summary {
+    border-bottom: 1px solid var(--border-light);
+    margin-bottom: var(--space-sm);
+}
+
+.message-content kbd {
+    display: inline-block;
+    padding: 2px 8px;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 0.85rem;
+    background: #f1f5f9;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-sm);
+    box-shadow: 0 2px 0 var(--border-light);
 }

@@ -135,11 +135,13 @@ async def agent_chat(request: Request):
                             "token": msg.additional_kwargs["reasoning_content"],
                             "id": msg.id,
                         }
+                        text += msg.additional_kwargs["reasoning_content"]
                         yield f"data: {stream_response.model_dump_json()}\n\n"
                     if msg.content:
                         # 直接使用msg.content作为单个token
                         stream_response.event = "token"
                         stream_response.data = {"token": msg.content, "id": msg.id}
+                        text += msg.content
                         yield f"data: {stream_response.model_dump_json()}\n\n"
             elif mode == "updates":  # 处理更新流
                 # print(f"\n[Update]: {chunk}")
