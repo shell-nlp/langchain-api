@@ -1,11 +1,15 @@
-import os
 from dataclasses import dataclass
 from datetime import datetime
+import os
+from pathlib import Path
 from typing import List
 from zoneinfo import ZoneInfo
 
+from deepagents import create_deep_agent
+from deepagents.backends import FilesystemBackend
 from langchain.agents import create_agent
 from langchain.agents.middleware import AgentMiddleware, HumanInTheLoopMiddleware
+from langchain.agents.middleware import DockerExecutionPolicy, ShellToolMiddleware
 from langchain_deepseek import ChatDeepSeek
 from langgraph.checkpoint.memory import MemorySaver
 from loguru import logger
@@ -91,6 +95,7 @@ DEFUALT_SYSTEM_PROMPT = """
 """
 DEEP_AGENT_SYSTEM_PROMPT = """你是一个精确执行的智能体，需要判断是否进行工具的调用，如果是闲聊，则直接回答用户的问题，如果是需要提供的技能，需要根据用户的问题来寻找一个合适的技能，并执行技能。 
 """
+DEEP_AGENT_SYSTEM_PROMPT = ""
 
 
 class Agent:
@@ -101,7 +106,7 @@ class Agent:
         middleware: List[AgentMiddleware] = [],
         deep_agent: bool = False,
         skills: list | None = None,
-        root_dir: str | None = None,
+        root_dir: Path | None = None,
     ):
         system_prompt = system_prompt + get_current_time()
         self.model = ChatDeepSeek(
@@ -129,9 +134,24 @@ class Agent:
 
         if deep_agent:
             logger.info("正在使用 DeepAgent")
-            from deepagents import create_deep_agent
-            from deepagents.backends import FilesystemBackend
 
+            # 添加 ShellToolMiddleware 到中间件列表
+            middleware += [
+                # 使用 docker 执行 shell 命令
+                ShellToolMiddleware(
+                    execution_policy=DockerExecutionPolicy(
+                        image="gpt_server:latest_",
+                        network_enabled=True,
+                        command_timeout=30,
+                    ),
+                    # 挂载项目根目录，使容器内可以访问项目代码
+                    workspace_root="/home/dev/liuyu/project/langchain-api",
+                    # 输入环境变量,这个环境变量是容器内或物理机的环境变量
+                    env={
+                        "PATH": "/gpt_server/.venv/bin",
+                    },
+                )
+            ]
             system_prompt = DEEP_AGENT_SYSTEM_PROMPT + get_current_time()
             self.agent = create_deep_agent(
                 model=self.model,

@@ -11,3 +11,5 @@ wheels/
 .env
 opencode.json
 .vscode/
+.trae
+conversation_history/

@@ -1,7 +1,7 @@
 import os
-import uuid
 from pathlib import Path
 from typing import Literal
+import uuid
 
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse, StreamingResponse
@@ -10,7 +10,6 @@ from langgraph.types import Command
 from loguru import logger
 from pydantic import BaseModel, Field
 
-# from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_api.agent.agent import Agent, CustomContext
 
 root_path = Path(__file__).parent.parent.parent
@@ -18,7 +17,7 @@ root_path = Path(__file__).parent.parent.parent
 frontend_path = root_path / "frontend"
 skills_path = ["skills"]
 os.system("clear")
-agent = Agent(root_dir=str(root_path), skills=skills_path, deep_agent=False).get_agent()
+agent = Agent(root_dir=root_path, skills=skills_path, deep_agent=True).get_agent()
 app = FastAPI()
 # 将 html 路由到 /
 app.mount(
