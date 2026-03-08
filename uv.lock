@@ -2,6 +2,39 @@ version = 1
 requires-python = ">=3.12"
 
 [[package]]
+name = "ag-ui-langgraph"
+version = "0.0.25"
+source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
+dependencies = [
+    { name = "ag-ui-protocol" },
+    { name = "langchain" },
+    { name = "langchain-core" },
+    { name = "langgraph" },
+    { name = "pydantic" },
+]
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/f9/c6/48bf48fb20eb128ca87058ba7cc22785c272ca5d162236f534a8fdb4b8cb/ag_ui_langgraph-0.0.25.tar.gz", hash = "sha256:ee100631fe57026d331f695c939826d470f3f9564e0956ff46be391f87d9498c", size = 13198 }
+wheels = [
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/25/d5/041803505ec2258790b82d45090a3e38aa5f32a60026f97718822c9bc86e/ag_ui_langgraph-0.0.25-py3-none-any.whl", hash = "sha256:a48cde3723578c32a6610e5f5e2bcf1f31ddb711ec1dd1b2c6486a7a64abe1cd", size = 14943 },
+]
+
+[package.optional-dependencies]
+fastapi = [
+    { name = "fastapi" },
+]
+
+[[package]]
+name = "ag-ui-protocol"
+version = "0.1.13"
+source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
+dependencies = [
+    { name = "pydantic" },
+]
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/04/b5/fc0b65b561d00d88811c8a7d98ee735833f81554be244340950e7b65820c/ag_ui_protocol-0.1.13.tar.gz", hash = "sha256:811d7d7dcce4783dec252918f40b717ebfa559399bf6b071c4ba47c0c1e21bcb", size = 5671 }
+wheels = [
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/cd/9f/b833c1ab1999da35ebad54841ae85d2c2764c931da9a6f52d8541b6901b2/ag_ui_protocol-0.1.13-py3-none-any.whl", hash = "sha256:1393fa894c1e8416efe184168a50689e760d05b32f4646eebb8ff423dddf8e8f", size = 8053 },
+]
+
+[[package]]
 name = "aiofiles"
 version = "25.1.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
@@ -445,6 +478,23 @@ wheels = [
 ]
 
 [[package]]
+name = "copilotkit"
+version = "0.1.78"
+source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
+dependencies = [
+    { name = "ag-ui-langgraph", extra = ["fastapi"] },
+    { name = "fastapi" },
+    { name = "langchain" },
+    { name = "langgraph" },
+    { name = "partialjson" },
+    { name = "toml" },
+]
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/d4/33/4ff1f1d732f89f8a08f08a20c6288af8d407438221b44748967f10df88f8/copilotkit-0.1.78.tar.gz", hash = "sha256:d27c303d61539eab3dc168ada6ec0a0ecb02f770da8aa4f1f9bbd9488235c556", size = 37578 }
+wheels = [
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/5a/5c/81bcea99f0da7d6b43f5bbdce13943da260ea94cd5d61c0d8bb1d047e50c/copilotkit-0.1.78-py3-none-any.whl", hash = "sha256:d4230094c96de708a58c9d5da82258a4bfda6ce85846b2fb154a1837ed0a92f5", size = 46919 },
+]
+
+[[package]]
 name = "crawl4ai"
 version = "0.8.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
@@ -636,18 +686,16 @@ wheels = [
 
 [[package]]
 name = "fastapi"
-version = "0.133.1"
+version = "0.115.14"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "annotated-doc" },
     { name = "pydantic" },
     { name = "starlette" },
     { name = "typing-extensions" },
-    { name = "typing-inspection" },
 ]
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/22/6f/0eafed8349eea1fa462238b54a624c8b408cd1ba2795c8e64aa6c34f8ab7/fastapi-0.133.1.tar.gz", hash = "sha256:ed152a45912f102592976fde6cbce7dae1a8a1053da94202e51dd35d184fadd6", size = 378741 }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/ca/53/8c38a874844a8b0fa10dd8adf3836ac154082cf88d3f22b544e9ceea0a15/fastapi-0.115.14.tar.gz", hash = "sha256:b1de15cdc1c499a4da47914db35d0e4ef8f1ce62b624e94e0e5824421df99739", size = 296263 }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/d2/c9/a175a7779f3599dfa4adfc97a6ce0e157237b3d7941538604aadaf97bfb6/fastapi-0.133.1-py3-none-any.whl", hash = "sha256:658f34ba334605b1617a65adf2ea6461901bdb9af3a3080d63ff791ecf7dc2e2", size = 109029 },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/53/50/b1222562c6d270fea83e9c9075b8e8600b8479150a18e4516a6138b980d1/fastapi-0.115.14-py3-none-any.whl", hash = "sha256:6c0c8bf9420bd58f565e585036d971872472b4f7d3f6c73b698e10cffdefb3ca", size = 95514 },
 ]
 
 [[package]]
@@ -1228,6 +1276,8 @@ name = "langchain-api"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "ag-ui-langgraph" },
+    { name = "copilotkit" },
     { name = "crawl4ai" },
     { name = "deepagents" },
     { name = "elasticsearch" },
@@ -1236,7 +1286,6 @@ dependencies = [
     { name = "langchain-deepseek" },
     { name = "langchain-elasticsearch" },
     { name = "langchain-mcp-adapters" },
-    { name = "langchain-openai" },
     { name = "langchain-tavily" },
     { name = "loguru" },
     { name = "pydantic-settings" },
@@ -1247,15 +1296,16 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "ag-ui-langgraph", specifier = ">=0.0.25" },
+    { name = "copilotkit", specifier = ">=0.1.78" },
     { name = "crawl4ai", specifier = ">=0.8.0" },
     { name = "deepagents", specifier = ">=0.4.4" },
     { name = "elasticsearch", specifier = ">=8.19.3" },
-    { name = "fastapi", specifier = ">=0.127.0" },
+    { name = "fastapi", specifier = ">=0.115.0,<0.116.0" },
     { name = "langchain", specifier = ">=1.2.10" },
     { name = "langchain-deepseek", specifier = ">=1.0.1" },
     { name = "langchain-elasticsearch", specifier = ">=1.0.0" },
     { name = "langchain-mcp-adapters", specifier = ">=0.2.1" },
-    { name = "langchain-openai", specifier = ">=1.1.6" },
     { name = "langchain-tavily", specifier = ">=0.2.17" },
     { name = "loguru", specifier = ">=0.7.3" },
     { name = "pydantic-settings", specifier = ">=2.12.0" },
@@ -1941,6 +1991,15 @@ source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/65/ee/299d360cdc32edc7d2cf530f3accf79c4fca01e96ffc950d8a52213bd8e4/packaging-26.0.tar.gz", hash = "sha256:00243ae351a257117b6a241061796684b084ed1c516a08c48a3f7e147a9d80b4", size = 143416 }
 wheels = [
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/b7/b9/c538f279a4e237a006a2c98387d081e9eb060d203d8ed34467cc0f0b9b53/packaging-26.0-py3-none-any.whl", hash = "sha256:b36f1fef9334a5588b4166f8bcd26a14e521f2b55e6b9de3aaa80d3ff7a37529", size = 74366 },
+]
+
+[[package]]
+name = "partialjson"
+version = "0.0.8"
+source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/5d/b2/59669fdc3ecbc724a077c598c1c9b4068549af0cd8c3b5add9337bd4d93a/partialjson-0.0.8.tar.gz", hash = "sha256:91217e19a15049332df534477f56420065ad1729cedee7d8c7433e1d2acc7dca", size = 4142 }
+wheels = [
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/8a/fb/453af21468774dbd0954853735a4fc7841544c3022ff86e5d93252d7ea72/partialjson-0.0.8-py3-none-any.whl", hash = "sha256:22c6c60944137f931a7033fa0eeee2d74b49114f3d45c25a560b07a6ebf22b76", size = 4549 },
 ]
 
 [[package]]
@@ -2936,28 +2995,26 @@ wheels = [
 
 [[package]]
 name = "sse-starlette"
-version = "3.2.0"
+version = "3.0.3"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
     { name = "anyio" },
-    { name = "starlette" },
 ]
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/8b/8d/00d280c03ffd39aaee0e86ec81e2d3b9253036a0f93f51d10503adef0e65/sse_starlette-3.2.0.tar.gz", hash = "sha256:8127594edfb51abe44eac9c49e59b0b01f1039d0c7461c6fd91d4e03b70da422", size = 27253 }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/db/3c/fa6517610dc641262b77cc7bf994ecd17465812c1b0585fe33e11be758ab/sse_starlette-3.0.3.tar.gz", hash = "sha256:88cfb08747e16200ea990c8ca876b03910a23b547ab3bd764c0d8eb81019b971", size = 21943 }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/96/7f/832f015020844a8b8f7a9cbc103dd76ba8e3875004c41e08440ea3a2b41a/sse_starlette-3.2.0-py3-none-any.whl", hash = "sha256:5876954bd51920fc2cd51baee47a080eb88a37b5b784e615abb0b283f801cdbf", size = 12763 },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/23/a0/984525d19ca5c8a6c33911a0c164b11490dd0f90ff7fd689f704f84e9a11/sse_starlette-3.0.3-py3-none-any.whl", hash = "sha256:af5bf5a6f3933df1d9c7f8539633dc8444ca6a97ab2e2a7cd3b6e431ac03a431", size = 11765 },
 ]
 
 [[package]]
 name = "starlette"
-version = "0.52.1"
+version = "0.46.2"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
     { name = "anyio" },
-    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
 ]
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/c4/68/79977123bb7be889ad680d79a40f339082c1978b5cfcf62c2d8d196873ac/starlette-0.52.1.tar.gz", hash = "sha256:834edd1b0a23167694292e94f597773bc3f89f362be6effee198165a35d62933", size = 2653702 }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/ce/20/08dfcd9c983f6a6f4a1000d934b9e6d626cff8d2eeb77a89a68eef20a2b7/starlette-0.46.2.tar.gz", hash = "sha256:7f7361f34eed179294600af672f565727419830b54b7b084efe44bb82d2fccd5", size = 2580846 }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/81/0d/13d1d239a25cbfb19e740db83143e95c772a1fe10202dda4b76792b114dd/starlette-0.52.1-py3-none-any.whl", hash = "sha256:0029d43eb3d273bc4f83a08720b4912ea4b071087a3b48db01b7c839f7954d74", size = 74272 },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/8b/0c/9d30a4ebeb6db2b25a841afbb80f6ef9a854fc3b41be131d249a977b4959/starlette-0.46.2-py3-none-any.whl", hash = "sha256:595633ce89f8ffa71a015caed34a5b2dc1c0cdb3f0f1fbd1e69339cf2abeec35", size = 72037 },
 ]
 
 [[package]]
@@ -3053,6 +3110,15 @@ wheels = [
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/fd/18/a545c4ea42af3df6effd7d13d250ba77a0a86fb20393143bbb9a92e434d4/tokenizers-0.22.2-cp39-abi3-win32.whl", hash = "sha256:a6bf3f88c554a2b653af81f3204491c818ae2ac6fbc09e76ef4773351292bc92", size = 2502363 },
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/65/71/0670843133a43d43070abeb1949abfdef12a86d490bea9cd9e18e37c5ff7/tokenizers-0.22.2-cp39-abi3-win_amd64.whl", hash = "sha256:c9ea31edff2968b44a88f97d784c2f16dc0729b8b143ed004699ebca91f05c48", size = 2747786 },
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/72/f4/0de46cfa12cdcbcd464cc59fde36912af405696f687e53a091fb432f694c/tokenizers-0.22.2-cp39-abi3-win_arm64.whl", hash = "sha256:9ce725d22864a1e965217204946f830c37876eee3b2ba6fc6255e8e903d5fcbc", size = 2612133 },
+]
+
+[[package]]
+name = "toml"
+version = "0.10.2"
+source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/be/ba/1f744cdc819428fc6b5084ec34d9b30660f6f9daaf70eead706e3203ec3c/toml-0.10.2.tar.gz", hash = "sha256:b3bda1d108d5dd99f4a20d24d9c348e91c4db7ab1b749200bded2f839ccbe68f", size = 22253 }
+wheels = [
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/44/6f/7120676b6d73228c96e17f1f794d8ab046fc910d781c8d151120c3f1569e/toml-0.10.2-py2.py3-none-any.whl", hash = "sha256:806143ae5bfb6a3c6e736a764057db0e6a0e05e338b5630894a5f779cabb4f9b", size = 16588 },
 ]
 
 [[package]]

@@ -11,14 +11,24 @@ from loguru import logger
 from pydantic import BaseModel, Field
 
 from langchain_api.agent.agent import Agent, CustomContext
+from copilotkit import LangGraphAGUIAgent
+from ag_ui_langgraph import add_langgraph_fastapi_endpoint
 
 root_path = Path(__file__).parent.parent.parent
 
 frontend_path = root_path / "frontend"
-skills_path = ["skills"]
-os.system("clear")
-agent = Agent(root_dir=root_path, skills=skills_path, deep_agent=True).get_agent()
+agent = Agent(deep_agent=True).get_agent()
 app = FastAPI()
+# 支持 AG-UI 协议
+add_langgraph_fastapi_endpoint(
+    app=app,
+    agent=LangGraphAGUIAgent(
+        name="sample_agent",
+        description="An example agent to use as a starting point for your own agent.",
+        graph=agent,
+    ),
+    path="/ag_ui",
+)
 # 将 html 路由到 /
 app.mount(
     "/web",

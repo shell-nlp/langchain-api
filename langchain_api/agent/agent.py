@@ -98,6 +98,7 @@ DEFUALT_SYSTEM_PROMPT = """
 DEEP_AGENT_SYSTEM_PROMPT = """你是一个精确执行的智能体，需要判断是否进行工具的调用，如果是闲聊，则直接回答用户的问题，如果是需要提供的技能，需要根据用户的问题来寻找一个合适的技能，并执行技能。 
 """
 DEEP_AGENT_SYSTEM_PROMPT = ""
+root_dir = Path(__file__).parent.parent.parent
 
 
 class Agent:
@@ -107,9 +108,8 @@ class Agent:
         tools: list = [],
         middleware: List[AgentMiddleware] = [],
         deep_agent: bool = False,
-        skills: list | None = None,
-        root_dir: Path | None = None,
     ):
+        skills = ["skills"]
         system_prompt = system_prompt + get_current_time()
         self.model = ChatDeepSeek(
             model=settings.CHAT_MODEL_NAME,
