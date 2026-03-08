@@ -19,6 +19,7 @@ dependencies = [
     "uvicorn>=0.40.0",
     "tzdata>=2025.3",
     "langchain-deepseek>=1.0.1",
+    "crawl4ai>=0.8.0",
 ]
 
 [[tool.uv.index]]
