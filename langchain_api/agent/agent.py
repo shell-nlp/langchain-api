@@ -11,13 +11,15 @@ from langchain.agents import create_agent
 from langchain.agents.middleware import AgentMiddleware, HumanInTheLoopMiddleware
 from langchain.agents.middleware import DockerExecutionPolicy, ShellToolMiddleware
 from langchain_deepseek import ChatDeepSeek
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.store.memory import InMemoryStore
 from loguru import logger
 from pydantic import Field
 
 from langchain_api.settings import settings
 
-checkpointer = MemorySaver()
+checkpointer = InMemorySaver()  # 短期记忆
+long_term_mem = InMemoryStore()  # 长期记忆
 
 shanghai_tz = ZoneInfo("Asia/Shanghai")  # 设置亚洲/上海时区
 
@@ -160,6 +162,7 @@ class Agent:
                 middleware=middleware,
                 backend=FilesystemBackend(root_dir=root_dir, virtual_mode=True),
                 skills=skills,
+                checkpointer=checkpointer,
             )
         else:
             logger.info("正在使用 ReactAgent")
