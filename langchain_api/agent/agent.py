@@ -118,6 +118,10 @@ class Agent:
             tags=["agent"],
             extra_body={"enable_thinking": False},
         )
+        from langchain_api.tools.web_fetch import web_fetch
+
+        tools.append(web_fetch)
+
         if os.getenv("TAVILY_API_KEY"):
             logger.info("TAVILY_API_KEY 已配置，将添加 TavilySearch 工具")
             from langchain_tavily.tavily_search import TavilySearch
@@ -162,7 +166,7 @@ class Agent:
                 middleware=middleware,
                 backend=FilesystemBackend(root_dir=root_dir, virtual_mode=True),
                 skills=skills,
-                checkpointer=checkpointer,
+                # checkpointer=checkpointer,
             )
         else:
             logger.info("正在使用 ReactAgent")
