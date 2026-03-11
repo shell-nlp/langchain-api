@@ -22,6 +22,8 @@ dependencies = [
     "copilotkit>=0.1.78",
     "ag-ui-langgraph>=0.0.25",
     "ag-ui-protocol>=0.1.13",
+    "opensandbox-server>=0.1.6",
+    "opensandbox-code-interpreter>=0.1.1",
 ]
 
 [[tool.uv.index]]
