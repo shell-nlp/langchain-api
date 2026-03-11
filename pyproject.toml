@@ -21,8 +21,13 @@ dependencies = [
     "crawl4ai>=0.8.0",
     "copilotkit>=0.1.78",
     "ag-ui-langgraph>=0.0.25",
+    "ag-ui-protocol>=0.1.13",
 ]
 
 [[tool.uv.index]]
 url = "https://pypi.tuna.tsinghua.edu.cn/simple"
 default = true
+
+[tool.uv.sources]
+ag-ui-langgraph = { git = "https://github.com/ag-ui-protocol/ag-ui.git", subdirectory = "integrations/langgraph/python" }
+ag-ui-protocol = { git = "https://github.com/ag-ui-protocol/ag-ui.git", subdirectory = "sdks/python" }

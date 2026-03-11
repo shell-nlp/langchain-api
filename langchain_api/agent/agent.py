@@ -116,7 +116,7 @@ class Agent:
             api_base=settings.OPENAI_API_BASE,
             api_key=settings.OPENAI_API_KEY,
             tags=["agent"],
-            extra_body={"enable_thinking": False},
+            extra_body={"enable_thinking": True},
         )
         from langchain_api.tools.web_fetch import web_fetch
 
@@ -166,7 +166,7 @@ class Agent:
                 middleware=middleware,
                 backend=FilesystemBackend(root_dir=root_dir, virtual_mode=True),
                 skills=skills,
-                # checkpointer=checkpointer,
+                checkpointer=checkpointer,
             )
         else:
             logger.info("正在使用 ReactAgent")
