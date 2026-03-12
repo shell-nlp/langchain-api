@@ -9,11 +9,10 @@ from deepagents.backends.sandbox import (
     FileUploadResponse,
     WriteResult,
 )
-import os
-from nltk import pr
 from opensandbox import SandboxSync
 from opensandbox.config import ConnectionConfigSync
-from opensandbox.models.sandboxes import Volume, Host
+from opensandbox.models import WriteEntry
+from opensandbox.models.sandboxes import Host, Volume
 
 with open(Path(__file__).parent.parent.parent / ".sandbox.toml", "rb") as f:
     config = tomllib.load(f)
@@ -84,39 +83,39 @@ class OpenSandbox(BaseSandbox):
             List of FileUploadResponse objects, one per input file.
             Response order matches input order.
         """
+
         responses: list[FileUploadResponse] = []
+        write_entries = []
+
         for path, content in files:
-            try:
-                resolved_path = path
+            write_entries.append(WriteEntry(path=path, data=content, mode=644))
 
-                # Create parent directories if needed
-                resolved_path.parent.mkdir(parents=True, exist_ok=True)
-
-                flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
-                if hasattr(os, "O_NOFOLLOW"):
-                    flags |= os.O_NOFOLLOW
-                fd = os.open(resolved_path, flags, 0o644)
-                with os.fdopen(fd, "wb") as f:
-                    f.write(content)
-
+        try:
+            self.sandbox.files.write_files(write_entries)
+            for path, _ in files:
                 responses.append(FileUploadResponse(path=path, error=None))
-            except FileNotFoundError:
-                responses.append(FileUploadResponse(path=path, error="file_not_found"))
-            except PermissionError:
-                responses.append(
-                    FileUploadResponse(path=path, error="permission_denied")
-                )
-            except (ValueError, OSError) as e:
-                # ValueError from _resolve_path for path traversal, OSError for other file errors
-                if isinstance(e, ValueError) or "invalid" in str(e).lower():
+        except Exception:
+            for path, content in files:
+                try:
+                    self.sandbox.files.write_file(path=path, data=content)
+                    responses.append(FileUploadResponse(path=path, error=None))
+                except FileNotFoundError:
                     responses.append(
-                        FileUploadResponse(path=path, error="invalid_path")
+                        FileUploadResponse(path=path, error="file_not_found")
                     )
-                else:
-                    # Generic error fallback
+                except PermissionError:
                     responses.append(
-                        FileUploadResponse(path=path, error="invalid_path")
+                        FileUploadResponse(path=path, error="permission_denied")
                     )
+                except (ValueError, OSError) as e:
+                    if isinstance(e, ValueError) or "invalid" in str(e).lower():
+                        responses.append(
+                            FileUploadResponse(path=path, error="invalid_path")
+                        )
+                    else:
+                        responses.append(
+                            FileUploadResponse(path=path, error="invalid_path")
+                        )
 
         return responses
 
@@ -129,15 +128,11 @@ class OpenSandbox(BaseSandbox):
         Returns:
             List of FileDownloadResponse objects, one per input path.
         """
+        # TODO 上传和下载的异常处理存在问题，暂未处理
         responses: list[FileDownloadResponse] = []
         for path in paths:
             try:
-                resolved_path = path
-                # Use flags to optionally prevent symlink following if
-                # supported by the OS
-                fd = os.open(resolved_path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
-                with os.fdopen(fd, "rb") as f:
-                    content = f.read()
+                content = self.sandbox.files.read_bytes(path)
                 responses.append(
                     FileDownloadResponse(path=path, content=content, error=None)
                 )
@@ -161,7 +156,6 @@ class OpenSandbox(BaseSandbox):
                 responses.append(
                     FileDownloadResponse(path=path, content=None, error="invalid_path")
                 )
-            # Let other errors propagate
         return responses
 
 

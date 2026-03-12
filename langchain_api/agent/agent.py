@@ -6,22 +6,16 @@ from typing import List
 from zoneinfo import ZoneInfo
 
 from deepagents import create_deep_agent
-from deepagents.backends import FilesystemBackend
 from langchain.agents import create_agent
 from langchain.agents.middleware import AgentMiddleware, HumanInTheLoopMiddleware
-from langchain.agents.middleware import (
-    ShellToolMiddleware,
-    HostExecutionPolicy,
-)
 from langchain_deepseek import ChatDeepSeek
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.store.memory import InMemoryStore
 from loguru import logger
-from pydantic import Field
+from opensandbox.models.sandboxes import Host, Volume
 
-from langchain_api.settings import settings
 from langchain_api.sandbox.open_sandbox import OpenSandbox
-from opensandbox.models.sandboxes import Volume, Host
+from langchain_api.settings import settings
 
 checkpointer = InMemorySaver()  # 短期记忆
 long_term_mem = InMemoryStore()  # 长期记忆
@@ -46,14 +40,6 @@ def get_current_time() -> str:
     weekday_str = weekday_map[weekday_num]
     cur_time = f"""\n当前时间：{current_time.year}年{current_time.month}月{current_time.day}日 星期{weekday_str}"""
     return cur_time
-
-
-def eval_tool(expression: str = Field(..., description="要计算的数学表达式")) -> float:
-    """用来计算数学表达式的工具。输入一个数学表达式，返回计算结果。"""
-    try:
-        return float(eval(expression))
-    except Exception:
-        raise ValueError("无法计算表达式")
 
 
 @dataclass
@@ -141,12 +127,12 @@ class Agent:
 
         middleware = [
             BusinessMiddleware(),
-            HumanInTheLoopMiddleware(
-                description_prefix="工具执行需要批准",
-                interrupt_on={
-                    "eval_tool": {"allowed_decisions": ["approve", "reject", "edit"]}
-                },
-            ),
+            # HumanInTheLoopMiddleware(
+            #     description_prefix="工具执行需要批准",
+            #     interrupt_on={
+            #         "eval_tool": {"allowed_decisions": ["approve", "reject", "edit"]}
+            #     },
+            # ),
         ] + middleware
         workspace_path = root_dir / "workspace"
         if not workspace_path.exists():
