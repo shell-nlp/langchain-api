@@ -9,7 +9,10 @@ from deepagents import create_deep_agent
 from deepagents.backends import FilesystemBackend
 from langchain.agents import create_agent
 from langchain.agents.middleware import AgentMiddleware, HumanInTheLoopMiddleware
-from langchain.agents.middleware import DockerExecutionPolicy, ShellToolMiddleware
+from langchain.agents.middleware import (
+    ShellToolMiddleware,
+    HostExecutionPolicy,
+)
 from langchain_deepseek import ChatDeepSeek
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.store.memory import InMemoryStore
@@ -17,7 +20,10 @@ from loguru import logger
 from pydantic import Field
 
 from langchain_api.settings import settings
+from langchain_api.sandbox.open_sandbox import OpenSandbox
+from opensandbox.models.sandboxes import Volume, Host
 
+checkpointer = InMemorySaver()  # 短期记忆
 checkpointer = InMemorySaver()  # 短期记忆
 long_term_mem = InMemoryStore()  # 长期记忆
 
@@ -63,6 +69,7 @@ class BusinessMiddleware(AgentMiddleware):
     def wrap_model_call(self, request, handler):
         context: CustomContext = request.runtime.context
         logger.info(context)
+
         if not context.internet_search:
             # 禁用互联网搜索相关的工具调用
             filtered_tools = [
@@ -137,26 +144,21 @@ class Agent:
                 },
             ),
         ] + middleware
-
+        workspace_path = root_dir / "workspace"
+        if not workspace_path.exists():
+            workspace_path.mkdir(parents=True, exist_ok=True)
         if deep_agent:
             logger.info("正在使用 DeepAgent")
-
             # 添加 ShellToolMiddleware 到中间件列表
+            host_execution_policy = HostExecutionPolicy(command_timeout=60 * 5)
             middleware += [
                 # 使用 docker 执行 shell 命令
-                ShellToolMiddleware(
-                    execution_policy=DockerExecutionPolicy(
-                        image="gpt_server:latest_",
-                        network_enabled=True,
-                        command_timeout=30,
-                    ),
-                    # 挂载项目根目录，使容器内可以访问项目代码
-                    workspace_root="/home/dev/liuyu/project/langchain-api",
-                    # 输入环境变量,这个环境变量是容器内或物理机的环境变量
-                    env={
-                        "PATH": "/gpt_server/.venv/bin",
-                    },
-                )
+                # ShellToolMiddleware(
+                #     execution_policy=host_execution_policy,
+                #     # 挂载项目根目录，使容器内可以访问项目代码
+                #     workspace_root=workspace_path,
+                #     # 输入环境变量,这个环境变量是容器内或物理机的环境变量
+                # )
             ]
             system_prompt = DEEP_AGENT_SYSTEM_PROMPT + get_current_time()
             self.agent = create_deep_agent(
@@ -164,9 +166,17 @@ class Agent:
                 tools=tools,
                 system_prompt=system_prompt,
                 middleware=middleware,
-                backend=FilesystemBackend(root_dir=root_dir, virtual_mode=True),
+                backend=OpenSandbox(
+                    volumes=[
+                        Volume(
+                            name="workspace-root",
+                            host=Host(path=str(workspace_path)),
+                            mount_path="/workspace",
+                        )
+                    ]
+                ),
                 skills=skills,
-                checkpointer=checkpointer,
+                # checkpointer=checkpointer,
             )
         else:
             logger.info("正在使用 ReactAgent")
