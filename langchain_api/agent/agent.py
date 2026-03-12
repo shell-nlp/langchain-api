@@ -24,7 +24,6 @@ from langchain_api.sandbox.open_sandbox import OpenSandbox
 from opensandbox.models.sandboxes import Volume, Host
 
 checkpointer = InMemorySaver()  # 短期记忆
-checkpointer = InMemorySaver()  # 短期记忆
 long_term_mem = InMemoryStore()  # 长期记忆
 
 shanghai_tz = ZoneInfo("Asia/Shanghai")  # 设置亚洲/上海时区
@@ -116,7 +115,7 @@ class Agent:
         middleware: List[AgentMiddleware] = [],
         deep_agent: bool = False,
     ):
-        skills = ["skills"]
+        skills = ["/workspace/skills"]
         system_prompt = system_prompt + get_current_time()
         self.model = ChatDeepSeek(
             model=settings.CHAT_MODEL_NAME,
@@ -124,6 +123,11 @@ class Agent:
             api_key=settings.OPENAI_API_KEY,
             tags=["agent"],
             extra_body={"enable_thinking": True},
+            profile={
+                "max_input_tokens": 100_000,  # 输入token上限
+                "tool_calling": True,  # 支持工具调用
+                "structured_output": True,  # 支持结构化输出
+            },
         )
         from langchain_api.tools.web_fetch import web_fetch
 
@@ -149,17 +153,7 @@ class Agent:
             workspace_path.mkdir(parents=True, exist_ok=True)
         if deep_agent:
             logger.info("正在使用 DeepAgent")
-            # 添加 ShellToolMiddleware 到中间件列表
-            host_execution_policy = HostExecutionPolicy(command_timeout=60 * 5)
-            middleware += [
-                # 使用 docker 执行 shell 命令
-                # ShellToolMiddleware(
-                #     execution_policy=host_execution_policy,
-                #     # 挂载项目根目录，使容器内可以访问项目代码
-                #     workspace_root=workspace_path,
-                #     # 输入环境变量,这个环境变量是容器内或物理机的环境变量
-                # )
-            ]
+
             system_prompt = DEEP_AGENT_SYSTEM_PROMPT + get_current_time()
             self.agent = create_deep_agent(
                 model=self.model,
@@ -176,7 +170,7 @@ class Agent:
                     ]
                 ),
                 skills=skills,
-                # checkpointer=checkpointer,
+                checkpointer=checkpointer,
             )
         else:
             logger.info("正在使用 ReactAgent")
@@ -187,6 +181,7 @@ class Agent:
                 system_prompt=system_prompt,
                 middleware=middleware,
                 checkpointer=checkpointer,
+                skills=skills,
             )
 
     def get_agent(self):
@@ -201,5 +196,6 @@ if __name__ == "__main__":
         api_key=settings.OPENAI_API_KEY,
         extra_body={"enable_thinking": True},
     )
+    model.get_num_tokens_from_messages
     for chunk in model.stream("1+1="):
         print(chunk)
