@@ -99,23 +99,10 @@ class OpenSandbox(BaseSandbox):
                 try:
                     self.sandbox.files.write_file(path=path, data=content)
                     responses.append(FileUploadResponse(path=path, error=None))
-                except FileNotFoundError:
+                except Exception:
                     responses.append(
-                        FileUploadResponse(path=path, error="file_not_found")
+                        FileUploadResponse(path=path, error="unknown_error")
                     )
-                except PermissionError:
-                    responses.append(
-                        FileUploadResponse(path=path, error="permission_denied")
-                    )
-                except (ValueError, OSError) as e:
-                    if isinstance(e, ValueError) or "invalid" in str(e).lower():
-                        responses.append(
-                            FileUploadResponse(path=path, error="invalid_path")
-                        )
-                    else:
-                        responses.append(
-                            FileUploadResponse(path=path, error="invalid_path")
-                        )
 
         return responses
 
@@ -136,26 +123,11 @@ class OpenSandbox(BaseSandbox):
                 responses.append(
                     FileDownloadResponse(path=path, content=content, error=None)
                 )
-            except FileNotFoundError:
+            except Exception:
                 responses.append(
-                    FileDownloadResponse(
-                        path=path, content=None, error="file_not_found"
-                    )
+                    FileDownloadResponse(path=path, content=None, error="unknown_error")
                 )
-            except PermissionError:
-                responses.append(
-                    FileDownloadResponse(
-                        path=path, content=None, error="permission_denied"
-                    )
-                )
-            except IsADirectoryError:
-                responses.append(
-                    FileDownloadResponse(path=path, content=None, error="is_directory")
-                )
-            except ValueError:
-                responses.append(
-                    FileDownloadResponse(path=path, content=None, error="invalid_path")
-                )
+
         return responses
 
 
