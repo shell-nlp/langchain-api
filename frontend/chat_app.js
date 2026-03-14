@@ -459,7 +459,7 @@ function sendMessage() {
     currentAbortController = new AbortController();
     
     // 使用 Fetch API 发送 POST 请求并处理 SSE
-    fetch(`${API_BASE_URL}/agent_chat`, {
+    fetch(`${API_BASE_URL}/api/general_api`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -917,7 +917,7 @@ function handleInterrupt(decision) {
     // 创建新的 AbortController
     currentAbortController = new AbortController();
     
-    fetch(`${API_BASE_URL}/agent_chat`, {
+    fetch(`${API_BASE_URL}/api/general_api`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',

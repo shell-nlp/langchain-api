@@ -2,7 +2,6 @@ from dataclasses import dataclass
 from datetime import datetime
 import os
 from pathlib import Path
-from typing import List
 from zoneinfo import ZoneInfo
 
 from deepagents import create_deep_agent
@@ -89,16 +88,16 @@ class Agent:
         self,
         system_prompt=DEFUALT_SYSTEM_PROMPT,
         tools: list = [],
-        middleware: List[AgentMiddleware] = [],
         deep_agent: bool = False,
     ):
+        middleware = []
         system_prompt = system_prompt + get_current_time()
         self.model = ChatDeepSeek(
             model=settings.CHAT_MODEL_NAME,
             api_base=settings.OPENAI_API_BASE,
             api_key=settings.OPENAI_API_KEY,
             tags=["agent"],
-            extra_body={"enable_thinking": True},
+            extra_body={"enable_thinking": False},
         )
         from langchain_api.tools.web_fetch import web_fetch
 
@@ -113,12 +112,12 @@ class Agent:
 
         middleware = [
             BusinessMiddleware(),
-            HumanInTheLoopMiddleware(
-                description_prefix="工具执行需要批准",
-                interrupt_on={
-                    "execute": {"allowed_decisions": ["approve", "reject", "edit"]}
-                },
-            ),
+            # HumanInTheLoopMiddleware(
+            #     description_prefix="工具执行需要批准",
+            #     interrupt_on={
+            #         "execute": {"allowed_decisions": ["approve", "reject", "edit"]}
+            #     },
+            # ),
         ] + middleware
 
         if not workspace_path.exists():
