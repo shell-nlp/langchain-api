@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     # Tavily API Key 配置
     TAVILY_API_KEY: str | None = None
 
+    # 使用沙盒配置
+    USE_SANDBOX: bool = False
+
     model_config = SettingsConfigDict(
         env_file=str(env_path),
         env_file_encoding="utf-8",

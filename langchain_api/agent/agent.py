@@ -12,9 +12,7 @@ from langchain_deepseek import ChatDeepSeek
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.store.memory import InMemoryStore
 from loguru import logger
-from opensandbox.models.sandboxes import Host, Volume
 
-from langchain_api.sandbox.open_sandbox import OpenSandbox
 from langchain_api.settings import settings
 
 checkpointer = InMemorySaver()  # 短期记忆
@@ -54,6 +52,8 @@ class BusinessMiddleware(AgentMiddleware):
     def wrap_model_call(self, request, handler):
         context: CustomContext = request.runtime.context
         logger.info(context)
+        tool_names = [tool.name for tool in request.tools]
+        logger.info(f"当前工具：{tool_names}")
 
         if not context.internet_search:
             # 禁用互联网搜索相关的工具调用
@@ -92,6 +92,10 @@ DEEP_AGENT_SYSTEM_PROMPT = """你是一个精确执行的智能体，需要判�
 DEEP_AGENT_SYSTEM_PROMPT = ""
 root_dir = Path(__file__).parent.parent.parent
 
+home_path = root_dir / ".langchain_api"
+workspace_path = home_path / "workspace"
+skills = ["/workspace/skills"]
+
 
 class Agent:
     def __init__(
@@ -101,7 +105,6 @@ class Agent:
         middleware: List[AgentMiddleware] = [],
         deep_agent: bool = False,
     ):
-        skills = ["/workspace/skills"]
         system_prompt = system_prompt + get_current_time()
         self.model = ChatDeepSeek(
             model=settings.CHAT_MODEL_NAME,
@@ -117,6 +120,7 @@ class Agent:
         )
         from langchain_api.tools.web_fetch import web_fetch
 
+        backend = None
         tools.append(web_fetch)
 
         if os.getenv("TAVILY_API_KEY"):
@@ -134,9 +138,31 @@ class Agent:
             #     },
             # ),
         ] + middleware
-        workspace_path = root_dir / "workspace"
+
         if not workspace_path.exists():
             workspace_path.mkdir(parents=True, exist_ok=True)
+        # 使用沙箱作为后端
+        if settings.USE_SANDBOX:
+            from opensandbox.models.sandboxes import Host, Volume
+            from langchain_api.sandbox.open_sandbox import OpenSandbox
+
+            logger.info("正在使用 OpenSandbox 作为后端")
+            backend = OpenSandbox(
+                volumes=[
+                    Volume(
+                        name="workspace-root",
+                        host=Host(path=str(workspace_path)),
+                        mount_path="/workspace",
+                    )
+                ]
+            )
+        else:
+            # 使用虚拟文件系统作为后端
+            from deepagents.backends.filesystem import FilesystemBackend
+
+            logger.info("正在使用 FilesystemBackend 作为后端")
+            backend = FilesystemBackend(root_dir=home_path, virtual_mode=True)
+
         if deep_agent:
             logger.info("正在使用 DeepAgent")
 
@@ -146,15 +172,7 @@ class Agent:
                 tools=tools,
                 system_prompt=system_prompt,
                 middleware=middleware,
-                backend=OpenSandbox(
-                    volumes=[
-                        Volume(
-                            name="workspace-root",
-                            host=Host(path=str(workspace_path)),
-                            mount_path="/workspace",
-                        )
-                    ]
-                ),
+                backend=backend,
                 skills=skills,
                 checkpointer=checkpointer,
             )
