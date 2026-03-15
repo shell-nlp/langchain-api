@@ -51,6 +51,8 @@ class BusinessMiddleware(AgentMiddleware):
     def wrap_model_call(self, request, handler):
         context: CustomContext = request.runtime.context
         logger.info(context)
+        # tool_names = [tool.name for tool in request.tools]
+        # logger.info(tool_names)
         if not context.internet_search:
             # 禁用互联网搜索相关的工具调用
             filtered_tools = [
@@ -144,6 +146,14 @@ class Agent:
             logger.info("正在使用 LocalShellBackend 作为后端")
             backend = LocalShellBackend(root_dir=home_path, virtual_mode=True)
 
+        def make_backend(runtime):
+            from deepagents.backends import CompositeBackend, StoreBackend
+
+            return CompositeBackend(
+                default=backend,
+                routes={"/memories/": StoreBackend(runtime)},  # Persistent storage
+            )
+
         if deep_agent:
             logger.info("正在使用 DeepAgent")
 
@@ -152,9 +162,10 @@ class Agent:
                 tools=tools,
                 system_prompt=system_prompt,
                 middleware=middleware,
-                backend=backend,
+                backend=make_backend,
                 skills=skills,
                 checkpointer=checkpointer,
+                store=long_term_mem,
             )
         else:
             logger.info("正在使用 ReactAgent")
@@ -166,6 +177,7 @@ class Agent:
                 middleware=middleware,
                 checkpointer=checkpointer,
                 skills=skills,
+                store=long_term_mem,
             )
 
     def get_agent(self):
