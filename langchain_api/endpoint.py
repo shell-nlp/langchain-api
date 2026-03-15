@@ -6,7 +6,7 @@ from fastapi.responses import StreamingResponse
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 from loguru import logger
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class GeneralAPIRequest(BaseModel):
@@ -94,6 +94,9 @@ def add_general_api_endpoint(
 
             pass
 
+        class Context(context):
+            model_config = ConfigDict(extra="allow")  # 允许额外字段
+
     else:
         # 如果没有 context，直接使用 GeneralAPIRequest
         Request = GeneralAPIRequest
@@ -129,7 +132,7 @@ def add_general_api_endpoint(
                 input=input,
                 stream_mode=["messages", "updates"],
                 config=config,
-                context=context,
+                context=Context(**request.model_dump()),
             ):
                 if mode == "messages":  # 只处理消息流
                     msg, metadata = chunk
