@@ -10,13 +10,16 @@ from langchain.agents.middleware import AgentMiddleware, HumanInTheLoopMiddlewar
 from langchain_deepseek import ChatDeepSeek
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.store.memory import InMemoryStore
+from langgraph.store.postgres import PostgresStore
 from loguru import logger
 
 from langchain_api.settings import settings
 
 checkpointer = InMemorySaver()  # 短期记忆
-long_term_mem = InMemoryStore()  # 长期记忆
-
+# store = InMemoryStore()  # 长期记忆
+store_ctx = PostgresStore.from_conn_string(settings.PG_DATABASE_URL)
+store = store_ctx.__enter__()
+# store.setup()
 shanghai_tz = ZoneInfo("Asia/Shanghai")  # 设置亚洲/上海时区
 
 
@@ -165,7 +168,7 @@ class Agent:
                 backend=make_backend,
                 skills=skills,
                 checkpointer=checkpointer,
-                store=long_term_mem,
+                store=store,
             )
         else:
             logger.info("正在使用 ReactAgent")
@@ -177,7 +180,7 @@ class Agent:
                 middleware=middleware,
                 checkpointer=checkpointer,
                 skills=skills,
-                store=long_term_mem,
+                store=store,
             )
 
     def get_agent(self):
