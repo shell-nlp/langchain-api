@@ -50,6 +50,7 @@ class GeneralAPIRequest(BaseModel):
     )
     # session_id 默认随机的uuid
     session_id: str = str(uuid.uuid4())
+    user_id: str = "default"
 
 
 class StreamResponse(BaseModel):

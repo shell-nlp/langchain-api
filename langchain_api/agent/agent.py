@@ -2,9 +2,11 @@ from dataclasses import dataclass
 from datetime import datetime
 import os
 from pathlib import Path
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from deepagents import create_deep_agent
+from deepagents.backends.store import BackendContext
 from langchain.agents import create_agent
 from langchain.agents.middleware import AgentMiddleware, HumanInTheLoopMiddleware
 from langchain_deepseek import ChatDeepSeek
@@ -20,7 +22,14 @@ checkpointer = InMemorySaver()  # 短期记忆
 store_ctx = PostgresStore.from_conn_string(settings.PG_DATABASE_URL)
 store = store_ctx.__enter__()
 # store.setup()
+
 shanghai_tz = ZoneInfo("Asia/Shanghai")  # 设置亚洲/上海时区
+DEFUALT_SYSTEM_PROMPT = ""
+root_dir = Path(__file__).parent.parent.parent
+
+home_path = root_dir / ".langchain_api"
+workspace_path = home_path / "workspace"
+skills = ["/workspace/skills"]
 
 
 def get_current_time() -> str:
@@ -46,6 +55,7 @@ def get_current_time() -> str:
 class CustomContext:
     internet_search: bool
     deep_thinking: bool = False
+    user_id: str = "default"
 
 
 class BusinessMiddleware(AgentMiddleware):
@@ -80,12 +90,10 @@ class BusinessMiddleware(AgentMiddleware):
         return await self.wrap_model_call(request, handler)
 
 
-DEFUALT_SYSTEM_PROMPT = ""
-root_dir = Path(__file__).parent.parent.parent
-
-home_path = root_dir / ".langchain_api"
-workspace_path = home_path / "workspace"
-skills = ["/workspace/skills"]
+def user_namespace_factory(ctx: BackendContext[Any, CustomContext]) -> tuple[str, ...]:
+    """动态生成用户namespace：('user123', 'filesystem')"""
+    user_id = ctx.runtime.context.user_id  # 从context获取
+    return (user_id, "filesystem")  # 用户隔离！
 
 
 class Agent:
@@ -154,7 +162,11 @@ class Agent:
 
             return CompositeBackend(
                 default=backend,
-                routes={"/memories/": StoreBackend(runtime)},  # Persistent storage
+                routes={
+                    "/memories/": StoreBackend(
+                        runtime, namespace=user_namespace_factory
+                    )
+                },  # Persistent storage
             )
 
         if deep_agent:
