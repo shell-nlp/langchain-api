@@ -13,9 +13,7 @@ class GeneralAPIRequest(BaseModel):
     query: str | None = Field(
         None,
         description="用户输入的查询",
-        examples=[
-            "请你执行如下任务：\n 1. 计算 10 + 10 的结果。\n2. 将结果乘以 5。\n 3. 根据结果生成一个故事。"
-        ],
+        examples=["请你执行如下任务：\n 1. 计算 10 + 10 的结果。\n2. 将结果乘以 5。"],
     )
     resume: dict | None = Field(
         None,

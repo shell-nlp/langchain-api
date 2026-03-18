@@ -5,12 +5,12 @@ from copilotkit import LangGraphAGUIAgent
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
 
-from langchain_api.agent.agent import Agent, CustomContext
+from langchain_api.agent.agent import Agent
+from langchain_api.agent.context import AgentContext
 from langchain_api.endpoint import add_general_api_endpoint
 
-root_path = Path(__file__).parent.parent
+root_path = Path(__file__).parent.parent.parent
 
 frontend_path = root_path / "frontend"
 
@@ -32,11 +32,6 @@ def redirect_to_frontend():
     return RedirectResponse(url="/web/index.html")
 
 
-class CustomContext(BaseModel):
-    internet_search: bool = Field(False, description="是否允许使用互联网搜索")
-    deep_thinking: bool = Field(False, description="是否启用深度思考")
-
-
 agent = Agent(deep_agent=True).get_agent()
 # 支持 AG-UI 协议
 add_langgraph_fastapi_endpoint(
@@ -53,7 +48,7 @@ add_general_api_endpoint(
     app=app,
     agent=agent,
     path="/api/general_api",
-    context=CustomContext,
+    context=AgentContext,
 )
 
 

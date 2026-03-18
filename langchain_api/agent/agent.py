@@ -13,6 +13,7 @@ from langchain_deepseek import ChatDeepSeek
 from langgraph.checkpoint.memory import InMemorySaver
 from loguru import logger
 
+from langchain_api.agent.context import AgentContext
 from langchain_api.settings import settings
 
 checkpointer = InMemorySaver()  # 短期记忆
@@ -59,18 +60,11 @@ def get_current_time() -> str:
     return cur_time
 
 
-@dataclass
-class CustomContext:
-    internet_search: bool = False
-    deep_thinking: bool = False
-    user_id: str = "default"
-
-
 class BusinessMiddleware(AgentMiddleware):
     """业务中间件，用于处理业务相关的逻辑"""
 
     def wrap_model_call(self, request, handler):
-        context: CustomContext = request.runtime.context
+        context: AgentContext = request.runtime.context
         logger.info(context)
         # tool_names = [tool.name for tool in request.tools]
         # logger.info(tool_names)
@@ -98,7 +92,7 @@ class BusinessMiddleware(AgentMiddleware):
         return await self.wrap_model_call(request, handler)
 
 
-def user_namespace_factory(ctx: BackendContext[Any, CustomContext]) -> tuple[str, ...]:
+def user_namespace_factory(ctx: BackendContext[Any, AgentContext]) -> tuple[str, ...]:
     """动态生成用户namespace：('user123', 'filesystem')"""
     user_id = ctx.runtime.context.user_id  # 从context获取
     return (user_id, "filesystem")  # 用户隔离！
@@ -192,7 +186,7 @@ class Agent:
                 skills=skills,
                 checkpointer=checkpointer,
                 store=store,
-                context_schema=CustomContext,
+                context_schema=AgentContext,
             )
         else:
             logger.info("正在使用 ReactAgent")
@@ -204,7 +198,7 @@ class Agent:
                 middleware=middleware,
                 checkpointer=checkpointer,
                 store=store,
-                context_schema=CustomContext,
+                context_schema=AgentContext,
             )
 
     def get_agent(self):
