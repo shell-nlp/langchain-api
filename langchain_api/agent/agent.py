@@ -36,7 +36,8 @@ root_dir = Path(__file__).parent.parent.parent
 home_path = root_dir / ".langchain_api"
 workspace_path = home_path / "workspace"
 skills = ["/workspace/skills"]
-use_copilotkit = True
+# TODO 开启后会导致smith 异常
+use_copilotkit = False
 
 
 def get_current_time() -> str:
@@ -111,7 +112,7 @@ class Agent:
         deep_agent: bool = False,
     ):
         middleware = [
-            BusinessMiddleware(),
+            # BusinessMiddleware(),
             # HumanInTheLoopMiddleware(
             #     description_prefix="工具执行需要批准",
             #     interrupt_on={

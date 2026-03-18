@@ -32,7 +32,7 @@ class Settings(BaseSettings):
 
     # postgres数据库配置
     PG_DATABASE_URL: str | None = None
-
+    LANGSMITH_API_KEY: str | None = None
     model_config = SettingsConfigDict(
         env_file=str(env_path),
         env_file_encoding="utf-8",

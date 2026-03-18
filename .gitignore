@@ -13,3 +13,4 @@ opencode.json
 .vscode/
 .trae
 conversation_history/
+.langgraph_api
