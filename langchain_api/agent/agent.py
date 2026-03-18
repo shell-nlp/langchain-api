@@ -61,7 +61,7 @@ def get_current_time() -> str:
 
 @dataclass
 class CustomContext:
-    internet_search: bool
+    internet_search: bool = False
     deep_thinking: bool = False
     user_id: str = "default"
 
