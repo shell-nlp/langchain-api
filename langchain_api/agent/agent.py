@@ -112,7 +112,7 @@ class Agent:
         deep_agent: bool = False,
     ):
         middleware = [
-            # BusinessMiddleware(),
+            BusinessMiddleware(),
             # HumanInTheLoopMiddleware(
             #     description_prefix="工具执行需要批准",
             #     interrupt_on={
@@ -192,6 +192,7 @@ class Agent:
                 skills=skills,
                 checkpointer=checkpointer,
                 store=store,
+                context_schema=CustomContext,
             )
         else:
             logger.info("正在使用 ReactAgent")
@@ -202,8 +203,8 @@ class Agent:
                 system_prompt=system_prompt,
                 middleware=middleware,
                 checkpointer=checkpointer,
-                skills=skills,
                 store=store,
+                context_schema=CustomContext,
             )
 
     def get_agent(self):
