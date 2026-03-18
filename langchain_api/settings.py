@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     # postgres数据库配置
     PG_DATABASE_URL: str | None = None
     LANGSMITH_API_KEY: str | None = None
+
+    # 是否使用copilotkit 的ag-ui 组件供前端使用
+    USE_COPILOTKIT: bool = False
+
     model_config = SettingsConfigDict(
         env_file=str(env_path),
         env_file_encoding="utf-8",

@@ -1,9 +1,6 @@
-from dataclasses import dataclass
-from datetime import datetime
 import os
 from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from deepagents import create_deep_agent
 from deepagents.backends.store import BackendContext
@@ -11,10 +8,13 @@ from langchain.agents import create_agent
 from langchain.agents.middleware import AgentMiddleware, HumanInTheLoopMiddleware
 from langchain_deepseek import ChatDeepSeek
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.graph.state import CompiledStateGraph
 from loguru import logger
 
 from langchain_api.agent.context import AgentContext
 from langchain_api.settings import settings
+from langchain_api.utils import get_current_time
+
 
 checkpointer = InMemorySaver()  # 短期记忆
 if settings.PG_DATABASE_URL:
@@ -30,7 +30,6 @@ else:
     store = InMemoryStore()  # 长期记忆
     logger.info("使用InMemoryStore作为长期记忆")
 
-shanghai_tz = ZoneInfo("Asia/Shanghai")  # 设置亚洲/上海时区
 DEFUALT_SYSTEM_PROMPT = ""
 root_dir = Path(__file__).parent.parent.parent
 
@@ -38,26 +37,6 @@ home_path = root_dir / ".langchain_api"
 workspace_path = home_path / "workspace"
 skills = ["/workspace/skills"]
 # TODO 开启后会导致smith 异常
-use_copilotkit = False
-
-
-def get_current_time() -> str:
-    # 星期几的映射表
-    weekday_map = {
-        0: "星期一",
-        1: "星期二",
-        2: "星期三",
-        3: "星期四",
-        4: "星期五",
-        5: "星期六",
-        6: "星期日",
-    }
-    current_time = datetime.now(shanghai_tz)
-    # 获取星期几（0=星期一，6=星期日）
-    weekday_num = current_time.weekday()
-    weekday_str = weekday_map[weekday_num]
-    cur_time = f"""\n当前时间：{current_time.year}年{current_time.month}月{current_time.day}日 星期{weekday_str}"""
-    return cur_time
 
 
 class BusinessMiddleware(AgentMiddleware):
@@ -105,15 +84,25 @@ class Agent:
         tools: list = [],
         deep_agent: bool = False,
     ):
-        middleware = [
-            BusinessMiddleware(),
-            # HumanInTheLoopMiddleware(
-            #     description_prefix="工具执行需要批准",
-            #     interrupt_on={
-            #         "execute": {"allowed_decisions": ["approve", "reject", "edit"]}
-            #     },
-            # ),
-        ]
+        middleware = []
+        # 是否使用CopilotKit中间件
+        if settings.USE_COPILOTKIT:
+            from copilotkit import CopilotKitMiddleware
+
+            middleware.append(CopilotKitMiddleware())
+        else:
+            middleware.append(BusinessMiddleware())
+        middleware.extend(
+            [
+                # HumanInTheLoopMiddleware(
+                #     description_prefix="工具执行需要批准",
+                #     interrupt_on={
+                #         "execute": {"allowed_decisions": ["approve", "reject", "edit"]}
+                #     },
+                # ),
+            ]
+        )
+
         system_prompt = system_prompt + get_current_time()
         self.model = ChatDeepSeek(
             model=settings.CHAT_MODEL_NAME,
@@ -132,11 +121,6 @@ class Agent:
             from langchain_tavily.tavily_search import TavilySearch
 
             tools.append(TavilySearch())
-        # 是否使用CopilotKit中间件
-        if use_copilotkit:
-            from copilotkit import CopilotKitMiddleware
-
-            middleware.append(CopilotKitMiddleware())
 
         if not workspace_path.exists():
             workspace_path.mkdir(parents=True, exist_ok=True)
@@ -201,7 +185,7 @@ class Agent:
                 context_schema=AgentContext,
             )
 
-    def get_agent(self):
+    def get_agent(self) -> CompiledStateGraph:
         return self.agent
 
 
