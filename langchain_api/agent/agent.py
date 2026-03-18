@@ -11,17 +11,23 @@ from langchain.agents import create_agent
 from langchain.agents.middleware import AgentMiddleware, HumanInTheLoopMiddleware
 from langchain_deepseek import ChatDeepSeek
 from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.store.memory import InMemoryStore
-from langgraph.store.postgres import PostgresStore
 from loguru import logger
 
 from langchain_api.settings import settings
 
 checkpointer = InMemorySaver()  # 短期记忆
-# store = InMemoryStore()  # 长期记忆
-store_ctx = PostgresStore.from_conn_string(settings.PG_DATABASE_URL)
-store = store_ctx.__enter__()
-# store.setup()
+if settings.PG_DATABASE_URL:
+    from langgraph.store.postgres import PostgresStore
+
+    store_ctx = PostgresStore.from_conn_string(settings.PG_DATABASE_URL)
+    store = store_ctx.__enter__()
+    store.setup()
+    logger.info("使用PostgresStore作为长期记忆")
+else:
+    from langgraph.store.memory import InMemoryStore
+
+    store = InMemoryStore()  # 长期记忆
+    logger.info("使用InMemoryStore作为长期记忆")
 
 shanghai_tz = ZoneInfo("Asia/Shanghai")  # 设置亚洲/上海时区
 DEFUALT_SYSTEM_PROMPT = ""
@@ -30,6 +36,7 @@ root_dir = Path(__file__).parent.parent.parent
 home_path = root_dir / ".langchain_api"
 workspace_path = home_path / "workspace"
 skills = ["/workspace/skills"]
+use_copilotkit = True
 
 
 def get_current_time() -> str:
@@ -103,7 +110,15 @@ class Agent:
         tools: list = [],
         deep_agent: bool = False,
     ):
-        middleware = []
+        middleware = [
+            BusinessMiddleware(),
+            # HumanInTheLoopMiddleware(
+            #     description_prefix="工具执行需要批准",
+            #     interrupt_on={
+            #         "execute": {"allowed_decisions": ["approve", "reject", "edit"]}
+            #     },
+            # ),
+        ]
         system_prompt = system_prompt + get_current_time()
         self.model = ChatDeepSeek(
             model=settings.CHAT_MODEL_NAME,
@@ -122,16 +137,11 @@ class Agent:
             from langchain_tavily.tavily_search import TavilySearch
 
             tools.append(TavilySearch())
+        # 是否使用CopilotKit中间件
+        if use_copilotkit:
+            from copilotkit import CopilotKitMiddleware
 
-        middleware = [
-            BusinessMiddleware(),
-            # HumanInTheLoopMiddleware(
-            #     description_prefix="工具执行需要批准",
-            #     interrupt_on={
-            #         "execute": {"allowed_decisions": ["approve", "reject", "edit"]}
-            #     },
-            # ),
-        ] + middleware
+            middleware.append(CopilotKitMiddleware())
 
         if not workspace_path.exists():
             workspace_path.mkdir(parents=True, exist_ok=True)
@@ -140,7 +150,6 @@ class Agent:
             from opensandbox.models.sandboxes import Host, Volume
             from langchain_api.sandbox.open_sandbox import OpenSandbox
 
-            logger.info("正在使用 OpenSandbox 作为后端")
             backend = OpenSandbox(
                 volumes=[
                     Volume(
@@ -150,12 +159,13 @@ class Agent:
                     )
                 ]
             )
+            logger.info("使用 OpenSandbox 作为后端")
         else:
             # 使用虚拟文件系统作为后端
             from deepagents.backends.local_shell import LocalShellBackend
 
-            logger.info("正在使用 LocalShellBackend 作为后端")
             backend = LocalShellBackend(root_dir=home_path, virtual_mode=True)
+            logger.info("使用 LocalShellBackend 作为后端")
 
         def make_backend(runtime):
             from deepagents.backends import CompositeBackend, StoreBackend
@@ -170,7 +180,7 @@ class Agent:
             )
 
         if deep_agent:
-            logger.info("正在使用 DeepAgent")
+            logger.info("使用 DeepAgent")
 
             self.agent = create_deep_agent(
                 model=self.model,
