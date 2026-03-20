@@ -111,10 +111,10 @@ class Agent:
             tags=["agent"],
             extra_body={"enable_thinking": False},
         )
-        from langchain_api.tools.web_fetch import web_fetch
+        from langchain_api.tools import web_fetch, get_weather
 
         backend = None
-        tools.append(web_fetch)
+        tools.extend([get_weather, web_fetch])
 
         if os.getenv("TAVILY_API_KEY"):
             logger.info("TAVILY_API_KEY 已配置，将添加 TavilySearch 工具")
