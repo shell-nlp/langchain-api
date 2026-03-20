@@ -8,6 +8,7 @@ import {
 } from "@copilotkit/react-core/v2";
 import { z } from "zod";
 import { CopilotKit } from "@copilotkit/react-core";
+import conditionsToChinese from "./utils/weather";
 
 const AgenticChat = () => {
   return (
@@ -50,7 +51,9 @@ const Chat = () => {
       };
 
       const themeColor = getThemeColor(weatherResult.conditions);
-
+      // 将 conditions 转换为中文描述
+      weatherResult.conditions = conditionsToChinese(weatherResult.conditions);
+      console.log("weatherResult.conditions", weatherResult.conditions);
       return (
         <WeatherCard
           location={args.location}
@@ -65,15 +68,16 @@ const Chat = () => {
   useConfigureSuggestions({
     suggestions: [
       {
-        title: "询问工具",
+        title: "天气情况",
+        message: "今天天气怎么样？",
+      },
+      {
+        title: "工具详情",
         message: "你有那些工具可用？",
       },
+
       {
-        title: "询问技能",
-        message: "你有那些技能可用？",
-      },
-      {
-        title: "询问时间",
+        title: "时间信息",
         message: "你今天是几号？星期几？",
       },
     ],
@@ -143,7 +147,7 @@ function WeatherCard({
             >
               {location}
             </h3>
-            <p className="text-white">Current Weather</p>
+            <p className="text-white">当前天气</p>
           </div>
           <WeatherIcon conditions={result.conditions} />
         </div>
@@ -164,15 +168,15 @@ function WeatherCard({
         <div className="mt-4 pt-4 border-t border-white">
           <div className="grid grid-cols-3 gap-2 text-center">
             <div data-testid="weather-humidity">
-              <p className="text-white text-xs">Humidity</p>
+              <p className="text-white text-xs">湿度</p>
               <p className="text-white font-medium">{result.humidity}%</p>
             </div>
             <div data-testid="weather-wind">
-              <p className="text-white text-xs">Wind</p>
+              <p className="text-white text-xs">风速</p>
               <p className="text-white font-medium">{result.windSpeed} mph</p>
             </div>
             <div data-testid="weather-feels-like">
-              <p className="text-white text-xs">Feels Like</p>
+              <p className="text-white text-xs">体感温度</p>
               <p className="text-white font-medium">{result.feelsLike}°</p>
             </div>
           </div>
