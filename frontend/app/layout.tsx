@@ -1,4 +1,5 @@
 import "@copilotkit/react-ui/v2/styles.css";
+import "./globals.css";
 
 export default function RootLayout({
   children,

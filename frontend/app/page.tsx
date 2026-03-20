@@ -28,6 +28,11 @@ const Chat = () => {
       location: z.string(),
     }),
     render: ({ args, result, status }: any) => {
+      // result: {"temperature": 20, "conditions": "sunny", "humidity": 50, "wind_speed": 10, "feelsLike": 25}
+      // result 是字符串，需要解析为 JSON 对象
+      if (typeof result === "string") {
+        result = JSON.parse(result);
+      }
       if (status !== "complete") {
         return (
           <div className=" bg-[#667eea] text-white p-4 rounded-lg max-w-md">
