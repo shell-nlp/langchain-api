@@ -7,7 +7,6 @@ from deepagents.backends.store import BackendContext
 from langchain.agents import create_agent
 from langchain.agents.middleware import (
     AgentMiddleware,
-    AgentState,
     HumanInTheLoopMiddleware,
 )
 from langchain_deepseek import ChatDeepSeek
@@ -18,7 +17,7 @@ from loguru import logger
 from langchain_api.agent.context import AgentContext
 from langchain_api.settings import settings
 from langchain_api.utils import get_current_time
-
+from langchain_api.agent.state import StateSchema
 
 checkpointer = InMemorySaver()  # 短期记忆
 if settings.PG_DATABASE_URL:
@@ -42,12 +41,6 @@ workspace_path = home_path / "workspace"
 skills = ["/workspace/skills"]
 
 
-# TODO 开启后会导致smith 异常
-class StateSchema(AgentState):
-    internet_search: bool
-    deep_thinking: bool
-
-
 # https://github.com/CopilotKit/CopilotKit/issues/2646
 class BusinessMiddleware(AgentMiddleware):
     """业务中间件，用于处理业务相关的逻辑"""
@@ -55,11 +48,9 @@ class BusinessMiddleware(AgentMiddleware):
     state_schema = StateSchema
 
     def wrap_model_call(self, request, handler):
-        context: AgentContext = request.runtime.context
-        logger.info(context)
-        # tool_names = [tool.name for tool in request.tools]
-        internet_search = getattr(context, "internet_search", False)
-        deep_thinking = getattr(context, "deep_thinking", False)
+        state = request.state
+        internet_search = getattr(state, "internet_search", False)
+        deep_thinking = getattr(state, "deep_thinking", False)
         if not internet_search:
             # 禁用互联网搜索相关的工具调用
             filtered_tools = [

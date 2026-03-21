@@ -4,8 +4,6 @@ from pydantic import BaseModel, Field
 
 
 class AgentContext(BaseModel):
-    internet_search: bool = Field(False, description="是否允许使用互联网搜索")
-    deep_thinking: bool = Field(False, description="是否启用深度思考")
     # 会话ID，用于跟踪用户会话
     session_id: str = Field(
         default_factory=lambda: str(uuid.uuid4()), description="会话ID"
