@@ -49,8 +49,8 @@ class BusinessMiddleware(AgentMiddleware):
 
     def wrap_model_call(self, request, handler):
         state = request.state
-        internet_search = getattr(state, "internet_search", False)
-        deep_thinking = getattr(state, "deep_thinking", False)
+        internet_search = state.get("internet_search", False)
+        deep_thinking = state.get("deep_thinking", False)
         if not internet_search:
             # 禁用互联网搜索相关的工具调用
             filtered_tools = [
