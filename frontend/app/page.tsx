@@ -85,11 +85,16 @@ const Chat = () => {
   });
 
   return (
-    <div className="flex justify-center items-center h-full w-full">
-      <div className="h-full w-full md:w-8/10 md:h-8/10 rounded-lg">
+    <div className="flex justify-center items-center min-h-screen w-full p-4">
+      <div className="h-full w-full md:w-4/5 md:h-4/5 rounded-lg">
         <CopilotChat
           agentId="sample_agent"
           className="h-full rounded-2xl max-w-6xl mx-auto"
+          labels={{
+            welcomeMessageText: "今天我能为您做些什么?",
+            chatInputPlaceholder: "请输入您的问题...",
+            chatDisclaimerText: "AI可能会出错，请核实重要信息。",
+          }}
         />
       </div>
     </div>
