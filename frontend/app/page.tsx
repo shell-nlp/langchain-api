@@ -85,8 +85,8 @@ const Chat = () => {
   });
 
   return (
-    <div className="flex justify-center items-center min-h-screen w-full p-4">
-      <div className="h-full w-full md:w-4/5 md:h-4/5 rounded-lg">
+    <div className="flex justify-center min-h-screen w-full p-4">
+      <div className="w-full md:w-4/5 h-screen rounded-lg">
         <CopilotChat
           agentId="sample_agent"
           className="h-full rounded-2xl max-w-6xl mx-auto"
