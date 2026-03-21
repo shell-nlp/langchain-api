@@ -60,9 +60,15 @@ const Chat = () => {
                 {result && (
                   <div className="mt-3 pt-3 border-t border-gray-100">
                     <p className="text-xs text-gray-500 mb-2 font-medium">输出结果</p>
-                    <pre className="text-xs text-gray-600 bg-gray-50 rounded-lg p-3 overflow-x-auto">
-                      {JSON.stringify(result, null, 2)}
-                    </pre>
+                    {typeof result === "string" ? (
+                      <pre className="text-xs text-gray-600 bg-gray-50 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap">
+                        {result}
+                      </pre>
+                    ) : (
+                      <pre className="text-xs text-gray-600 bg-gray-50 rounded-lg p-3 overflow-x-auto">
+                        {JSON.stringify(result, null, 2)}
+                      </pre>
+                    )}
                   </div>
                 )}
               </>
