@@ -3,6 +3,7 @@ import "@copilotkit/react-core/v2/styles.css";
 import "./ui/style.css";
 import {
   useRenderTool,
+  useDefaultRenderTool,
   useConfigureSuggestions,
   CopilotChat,
 } from "@copilotkit/react-core/v2";
@@ -23,6 +24,55 @@ const AgenticChat = () => {
 };
 
 const Chat = () => {
+  // 为其他所有工具提供通用UI
+  useDefaultRenderTool({
+    render: ({ name, args, status, result }) => {
+      const isComplete = status === "complete";
+      return (
+        <div
+          className={`rounded-xl mt-6 mb-4 max-w-md w-full border border-gray-200 shadow-sm ${
+            isComplete ? "bg-white" : "bg-gradient-to-br from-indigo-500 to-purple-600"
+          }`}
+        >
+          <div className={`p-4 ${!isComplete && "text-white"}`}>
+            <div className="flex items-center gap-3">
+              {!isComplete && <span className="animate-spin text-lg">⚙️</span>}
+              {isComplete && (
+                <span className="w-6 h-6 rounded-full bg-green-500 flex items-center justify-center text-white text-sm">✓</span>
+              )}
+              <h4 className={`font-semibold ${isComplete ? "text-gray-800" : "text-white"}`}>
+                {name}
+              </h4>
+            </div>
+            {!isComplete && (
+              <p className="text-white/70 text-sm mt-2">正在执行中...</p>
+            )}
+            {isComplete && (
+              <>
+                {args && Object.keys(args).length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-gray-100">
+                    <p className="text-xs text-gray-500 mb-2 font-medium">输入参数</p>
+                    <pre className="text-xs text-gray-600 bg-gray-50 rounded-lg p-3 overflow-x-auto">
+                      {JSON.stringify(args, null, 2)}
+                    </pre>
+                  </div>
+                )}
+                {result && (
+                  <div className="mt-3 pt-3 border-t border-gray-100">
+                    <p className="text-xs text-gray-500 mb-2 font-medium">输出结果</p>
+                    <pre className="text-xs text-gray-600 bg-gray-50 rounded-lg p-3 overflow-x-auto">
+                      {JSON.stringify(result, null, 2)}
+                    </pre>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      );
+    },
+  });
+  // 为特定工具提供自定义UI渲染
   useRenderTool({
     name: "get_weather",
     parameters: z.object({
