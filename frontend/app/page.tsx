@@ -17,6 +17,16 @@ const AgenticChat = () => {
       runtimeUrl="/api/copilotkit"
       showDevConsole={false}
       agent="sample_agent"
+      // headers 用来添加自定义的请求头，比如 Authorization
+      headers={{
+        Authorization:
+          "Bearer " + (localStorage.getItem("token") || "test_token"),
+      }}
+      // properties 用来传入其它的参数，比如是否开启互联网搜索、是否开启深度思考等
+      properties={{
+        internet_search: false,
+        deep_thinking: true,
+      }}
     >
       <Chat />
     </CopilotKit>
@@ -31,16 +41,22 @@ const Chat = () => {
       return (
         <div
           className={`rounded-xl mt-6 mb-4 max-w-md w-full border border-gray-200 shadow-sm ${
-            isComplete ? "bg-white" : "bg-gradient-to-br from-indigo-500 to-purple-600"
+            isComplete
+              ? "bg-white"
+              : "bg-gradient-to-br from-indigo-500 to-purple-600"
           }`}
         >
           <div className={`p-4 ${!isComplete && "text-white"}`}>
             <div className="flex items-center gap-3">
               {!isComplete && <span className="animate-spin text-lg">⚙️</span>}
               {isComplete && (
-                <span className="w-6 h-6 rounded-full bg-green-500 flex items-center justify-center text-white text-sm">✓</span>
+                <span className="w-6 h-6 rounded-full bg-green-500 flex items-center justify-center text-white text-sm">
+                  ✓
+                </span>
               )}
-              <h4 className={`font-semibold ${isComplete ? "text-gray-800" : "text-white"}`}>
+              <h4
+                className={`font-semibold ${isComplete ? "text-gray-800" : "text-white"}`}
+              >
                 {name}
               </h4>
             </div>
@@ -51,7 +67,9 @@ const Chat = () => {
               <>
                 {args && Object.keys(args).length > 0 && (
                   <div className="mt-3 pt-3 border-t border-gray-100">
-                    <p className="text-xs text-gray-500 mb-2 font-medium">输入参数</p>
+                    <p className="text-xs text-gray-500 mb-2 font-medium">
+                      输入参数
+                    </p>
                     <pre className="text-xs text-gray-600 bg-gray-50 rounded-lg p-3 overflow-x-auto">
                       {JSON.stringify(args, null, 2)}
                     </pre>
@@ -59,7 +77,9 @@ const Chat = () => {
                 )}
                 {result && (
                   <div className="mt-3 pt-3 border-t border-gray-100">
-                    <p className="text-xs text-gray-500 mb-2 font-medium">输出结果</p>
+                    <p className="text-xs text-gray-500 mb-2 font-medium">
+                      输出结果
+                    </p>
                     {typeof result === "string" ? (
                       <pre className="text-xs text-gray-600 bg-gray-50 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap">
                         {result}

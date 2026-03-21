@@ -4,9 +4,10 @@ playwright install --with-deps chromium
 """
 
 import asyncio
-from loguru import logger
-from langchain_core.tools import tool
 from typing import Any
+
+from langchain_core.tools import tool
+from loguru import logger
 
 _CRAWL_SEMAPHORE = asyncio.Semaphore(8)
 

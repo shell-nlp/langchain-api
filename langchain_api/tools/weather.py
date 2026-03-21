@@ -1,7 +1,7 @@
+from functools import lru_cache
+
 from langchain_core.tools import tool
 import requests
-
-from functools import lru_cache
 
 
 @tool

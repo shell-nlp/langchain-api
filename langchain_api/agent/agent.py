@@ -5,7 +5,11 @@ from typing import Any
 from deepagents import create_deep_agent
 from deepagents.backends.store import BackendContext
 from langchain.agents import create_agent
-from langchain.agents.middleware import AgentMiddleware, HumanInTheLoopMiddleware
+from langchain.agents.middleware import (
+    AgentMiddleware,
+    AgentState,
+    HumanInTheLoopMiddleware,
+)
 from langchain_deepseek import ChatDeepSeek
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph.state import CompiledStateGraph
@@ -36,18 +40,27 @@ root_dir = Path(__file__).parent.parent.parent
 home_path = root_dir / ".langchain_api"
 workspace_path = home_path / "workspace"
 skills = ["/workspace/skills"]
+
+
 # TODO 开启后会导致smith 异常
+class StateSchema(AgentState):
+    internet_search: bool
+    deep_thinking: bool
 
 
+# https://github.com/CopilotKit/CopilotKit/issues/2646
 class BusinessMiddleware(AgentMiddleware):
     """业务中间件，用于处理业务相关的逻辑"""
+
+    state_schema = StateSchema
 
     def wrap_model_call(self, request, handler):
         context: AgentContext = request.runtime.context
         logger.info(context)
         # tool_names = [tool.name for tool in request.tools]
-        # logger.info(tool_names)
-        if not context.internet_search:
+        internet_search = getattr(context, "internet_search", False)
+        deep_thinking = getattr(context, "deep_thinking", False)
+        if not internet_search:
             # 禁用互联网搜索相关的工具调用
             filtered_tools = [
                 tool for tool in request.tools if tool.name != "tavily_search"
@@ -55,7 +68,7 @@ class BusinessMiddleware(AgentMiddleware):
             request = request.override(tools=filtered_tools)
 
         # 处理深度思考
-        if context.deep_thinking:
+        if deep_thinking:
             # 为模型调用添加深度思考参数
             if hasattr(request, "model_settings"):
                 model_settings = request.model_settings.copy()
@@ -90,8 +103,8 @@ class Agent:
             from copilotkit import CopilotKitMiddleware
 
             middleware.append(CopilotKitMiddleware())
-        else:
-            middleware.append(BusinessMiddleware())
+        # else:
+        middleware.append(BusinessMiddleware())
         middleware.extend(
             [
                 # HumanInTheLoopMiddleware(
