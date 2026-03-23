@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=str(env_path),
         env_file_encoding="utf-8",
+        extra="ignore",  # 改为ignore，允许额外环境变量
     )
 
 
