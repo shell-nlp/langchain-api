@@ -75,7 +75,10 @@ class BusinessMiddleware(AgentMiddleware):
 def user_namespace_factory(ctx: BackendContext[Any, AgentContext]) -> tuple[str, ...]:
     """动态生成用户namespace：('user123', 'filesystem')"""
     user_id = ctx.runtime.context.user_id  # 从context获取
-    return ("filesystem",)  # 用户隔离！
+    # TODO 获取config,未来可实现共享命名空间
+    # from langchain_core.runnables.config import var_child_runnable_config
+    # config = var_child_runnable_config.get()
+    return ("filesystem", user_id)  # 用户隔离！
 
 
 class Agent:
@@ -103,7 +106,9 @@ class Agent:
                 # ),
             ]
         )
+        # from langchain_api.middleware.tool_search import DeferredToolMiddleware
 
+        # middleware.append(DeferredToolMiddleware())
         system_prompt = system_prompt + get_current_time()
         self.model = ChatDeepSeek(
             model=settings.CHAT_MODEL_NAME,

@@ -1,10 +1,12 @@
-from langchain_deepseek import ChatDeepSeek
+import os
+
 from langchain.agents import create_agent
+from langchain_deepseek import ChatDeepSeek
+from langgraph.checkpoint.memory import MemorySaver
+
 from langchain_api.middleware import RAGMiddleware
 from langchain_api.retriever import vector_store
-from langgraph.checkpoint.memory import MemorySaver
 from langchain_api.settings import settings
-import os
 
 os.system("clear")
 

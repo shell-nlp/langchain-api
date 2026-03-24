@@ -8,6 +8,7 @@ from langchain_core.messages import ToolMessage
 from langchain_core.utils.function_calling import convert_to_openai_function
 from langgraph.types import Command
 from loguru import logger
+import asyncio
 
 MAX_RESULTS = 5
 
@@ -115,3 +116,6 @@ class DeferredToolMiddleware(AgentMiddleware):
             request = request.override(state=state, tools=[tool_search])
 
         return handler(request)
+
+    async def awrap_model_call(self, request, handler):
+        return await asyncio.to_thread(self.wrap_model_call, request, handler)
