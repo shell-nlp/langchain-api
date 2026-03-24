@@ -1,3 +1,5 @@
+from typing import Literal
+
 from dotenv import find_dotenv, load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -28,7 +30,7 @@ class Settings(BaseSettings):
     TAVILY_API_KEY: str | None = None
 
     # 使用沙盒配置
-    USE_SANDBOX: bool = False
+    BACKEND_TYPE: Literal["local_shell", "store", "sandbox"] = "local_shell"
 
     # postgres数据库配置
     PG_DATABASE_URL: str | None = None

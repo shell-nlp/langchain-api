@@ -12,7 +12,7 @@ from langchain_api.endpoint import add_general_api_endpoint
 
 root_path = Path(__file__).parent.parent.parent
 
-frontend_path = root_path / "frontend"
+frontend_path = root_path / "frontend_old"
 
 app = FastAPI()
 

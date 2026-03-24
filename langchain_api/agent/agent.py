@@ -5,19 +5,16 @@ from typing import Any
 from deepagents import create_deep_agent
 from deepagents.backends.store import BackendContext
 from langchain.agents import create_agent
-from langchain.agents.middleware import (
-    AgentMiddleware,
-    HumanInTheLoopMiddleware,
-)
+from langchain.agents.middleware import AgentMiddleware, HumanInTheLoopMiddleware
 from langchain_deepseek import ChatDeepSeek
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph.state import CompiledStateGraph
 from loguru import logger
 
 from langchain_api.agent.context import AgentContext
+from langchain_api.agent.state import StateSchema
 from langchain_api.settings import settings
 from langchain_api.utils import get_current_time
-from langchain_api.agent.state import StateSchema
 
 checkpointer = InMemorySaver()  # 短期记忆
 if settings.PG_DATABASE_URL:
@@ -78,7 +75,7 @@ class BusinessMiddleware(AgentMiddleware):
 def user_namespace_factory(ctx: BackendContext[Any, AgentContext]) -> tuple[str, ...]:
     """动态生成用户namespace：('user123', 'filesystem')"""
     user_id = ctx.runtime.context.user_id  # 从context获取
-    return (user_id, "filesystem")  # 用户隔离！
+    return ("filesystem",)  # 用户隔离！
 
 
 class Agent:
@@ -129,7 +126,7 @@ class Agent:
         if not workspace_path.exists():
             workspace_path.mkdir(parents=True, exist_ok=True)
         # 使用沙箱作为后端
-        if settings.USE_SANDBOX:
+        if settings.BACKEND_TYPE == "sandbox":
             from opensandbox.models.sandboxes import Host, Volume
             from langchain_api.sandbox.open_sandbox import OpenSandbox
 
@@ -143,22 +140,32 @@ class Agent:
                 ]
             )
             logger.info("使用 OpenSandbox 作为后端")
-        else:
+        elif settings.BACKEND_TYPE == "local_shell":
             # 使用虚拟文件系统作为后端
             from deepagents.backends.local_shell import LocalShellBackend
 
             backend = LocalShellBackend(root_dir=home_path, virtual_mode=True)
             logger.info("使用 LocalShellBackend 作为后端")
 
+        # -------------------------------
+        elif settings.BACKEND_TYPE == "store":
+            from langchain_api.agent.utils import copy_skills_to_store
+
+            copy_skills_to_store(skills_dir=workspace_path / "skills", store=store)
+            logger.info("使用 StoreBackend 作为后端")
+
         def make_backend(runtime):
             from deepagents.backends import CompositeBackend, StoreBackend
+
+            if settings.BACKEND_TYPE == "store":
+                backend = StoreBackend(runtime, namespace=user_namespace_factory)
 
             return CompositeBackend(
                 default=backend,
                 routes={
                     "/memories/": StoreBackend(
                         runtime, namespace=user_namespace_factory
-                    )
+                    ),
                 },  # Persistent storage
             )
 
