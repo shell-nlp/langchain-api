@@ -106,9 +106,7 @@ class Agent:
                 # ),
             ]
         )
-        # from langchain_api.middleware.tool_search import DeferredToolMiddleware
 
-        # middleware.append(DeferredToolMiddleware())
         system_prompt = system_prompt + get_current_time()
         self.model = ChatDeepSeek(
             model=settings.CHAT_MODEL_NAME,
@@ -173,6 +171,12 @@ class Agent:
                     ),
                 },  # Persistent storage
             )
+
+        if settings.USE_TOOL_SEARCH:
+            # 最后加载,保证工具可以被完全拦截
+            from langchain_api.middleware.tool_search import DeferredToolMiddleware
+
+            middleware.append(DeferredToolMiddleware())
 
         if deep_agent:
             logger.info("使用 DeepAgent")
