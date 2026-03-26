@@ -1,7 +1,7 @@
 import base64
 import concurrent.futures
 from pathlib import Path
-from typing import Annotated, Literal, Optional
+from typing import Annotated, Literal
 
 from deepagents.backends.utils import (
     format_grep_matches,
@@ -31,9 +31,17 @@ from langgraph.prebuilt.tool_node import ToolRuntime
 from langgraph.types import Command
 from opensandbox.models.sandboxes import Host, Volume
 
+from langchain_api.agent.context import AgentContext
 from langchain_api.sandbox.open_sandbox import OpenSandbox
 
-workspace_path = ""
+workspace_path = "/home/dev/liuyu/project/langchain-api/.langchain_api/workspace"
+
+
+def get_user_workspace_path(user_id: str) -> str:
+    new_workspace_path = Path(f"{workspace_path}/{user_id}/workspace").mkdir(
+        parents=True, exist_ok=True
+    )
+    return str(new_workspace_path)
 
 
 @tool("ls", description=LIST_FILES_TOOL_DESCRIPTION)
@@ -41,8 +49,10 @@ def ls_tool(
     path: Annotated[
         str, "Absolute path to the directory to list. Must be absolute, not relative."
     ],
+    runtime: ToolRuntime[AgentContext, None],
 ):
     """列出当前目录下的文件"""
+    user_id = runtime.context.user_id
     try:
         validated_path = validate_path(path)
     except ValueError as e:
@@ -50,10 +60,8 @@ def ls_tool(
     backend = OpenSandbox(
         volumes=[
             Volume(
-                name="workspace-root",
-                host=Host(
-                    path="/home/dev/liuyu/project/langchain-api/.langchain_api/workspace"
-                ),
+                name=f"workspace-root-{user_id}",
+                host=Host(path=get_user_workspace_path(user_id)),
                 mount_path="/workspace",
             )
         ]
@@ -68,20 +76,19 @@ def ls_tool(
 @tool("execute", description=EXECUTE_TOOL_DESCRIPTION)
 def execute_tool(
     command: Annotated[str, "Shell command to execute in the sandbox environment."],
-    runtime: ToolRuntime,
+    runtime: ToolRuntime[AgentContext, None],
     timeout: Annotated[
         int | None,
         "Optional timeout in seconds for this command. Overrides the default timeout. Use 0 for no-timeout execution on backends that support it.",
     ] = None,
 ):
     """执行命令并返回结果"""
+    user_id = runtime.context.user_id
     resolved_backend = OpenSandbox(
         volumes=[
             Volume(
-                name="workspace-root",
-                host=Host(
-                    path="/home/dev/liuyu/project/langchain-api/.langchain_api/workspace"
-                ),
+                name=f"workspace-root-{user_id}",
+                host=Host(path=get_user_workspace_path(user_id)),
                 mount_path="/workspace",
             )
         ]
@@ -108,7 +115,7 @@ def read_file(
     file_path: Annotated[
         str, "Absolute path to the file to read. Must be absolute, not relative."
     ],
-    runtime: ToolRuntime,
+    runtime: ToolRuntime[AgentContext, None],
     offset: Annotated[
         int,
         "Line number to start reading from (0-indexed). Use for pagination of large files.",
@@ -118,6 +125,7 @@ def read_file(
     ] = DEFAULT_READ_LIMIT,
 ):
     """读取文件内容"""
+    user_id = runtime.context.user_id
     try:
         validated_path = validate_path(file_path)
     except ValueError as e:
@@ -125,10 +133,8 @@ def read_file(
     backend = OpenSandbox(
         volumes=[
             Volume(
-                name="workspace-root",
-                host=Host(
-                    path="/home/dev/liuyu/project/langchain-api/.langchain_api/workspace"
-                ),
+                name=f"workspace-root-{user_id}",
+                host=Host(path=get_user_workspace_path(user_id)),
                 mount_path="/workspace",
             )
         ]
@@ -182,16 +188,15 @@ def write_file(
     content: Annotated[
         str, "The text content to write to the file. This parameter is required."
     ],
-    runtime: ToolRuntime,
+    runtime: ToolRuntime[AgentContext, None],
 ):
     """写入文件内容"""
+    user_id = runtime.context.user_id
     backend = OpenSandbox(
         volumes=[
             Volume(
-                name="workspace-root",
-                host=Host(
-                    path="/home/dev/liuyu/project/langchain-api/.langchain_api/workspace"
-                ),
+                name=f"workspace-root-{user_id}",
+                host=Host(path=get_user_workspace_path(user_id)),
                 mount_path="/workspace",
             )
         ]
@@ -232,7 +237,7 @@ def edit_file(
     new_string: Annotated[
         str, "The text to replace old_string with. Must be different from old_string."
     ],
-    runtime: ToolRuntime,
+    runtime: ToolRuntime[AgentContext, None],
     *,
     replace_all: Annotated[
         bool,
@@ -240,13 +245,12 @@ def edit_file(
     ] = False,
 ):
     """编辑文件内容"""
+    user_id = runtime.context.user_id
     resolved_backend = OpenSandbox(
         volumes=[
             Volume(
-                name="workspace-root",
-                host=Host(
-                    path="/home/dev/liuyu/project/langchain-api/.langchain_api/workspace"
-                ),
+                name=f"workspace-root-{user_id}",
+                host=Host(path=get_user_workspace_path(user_id)),
                 mount_path="/workspace",
             )
         ]
@@ -282,6 +286,7 @@ GLOB_TIMEOUT = 20.0  # seconds
 @tool("glob", description=GLOB_TOOL_DESCRIPTION)
 def glob_tool(
     pattern: str,
+    runtime: ToolRuntime[AgentContext, None],
     path: str = "/",
 ):
     """使用glob模式匹配文件"""
@@ -289,13 +294,12 @@ def glob_tool(
         validated_path = validate_path(path)
     except ValueError as e:
         return f"Error: {e}"
+    user_id = runtime.context.user_id
     resolved_backend = OpenSandbox(
         volumes=[
             Volume(
-                name="workspace-root",
-                host=Host(
-                    path="/home/dev/liuyu/project/langchain-api/.langchain_api/workspace"
-                ),
+                name=f"workspace-root-{user_id}",
+                host=Host(path=get_user_workspace_path(user_id)),
                 mount_path="/workspace",
             )
         ]
@@ -321,7 +325,7 @@ def glob_tool(
 @tool("grep", description=GLOB_TOOL_DESCRIPTION)
 def grep_tool(
     pattern: Annotated[str, "Text pattern to search for (literal string, not regex)."],
-    runtime: ToolRuntime,
+    runtime: ToolRuntime[AgentContext, None],
     path: Annotated[
         str | None, "Directory to search in. Defaults to current working directory."
     ] = None,
@@ -334,13 +338,13 @@ def grep_tool(
     ] = "files_with_matches",
 ):
     """使用grep模式搜索文件内容"""
+
+    user_id = runtime.context.user_id
     resolved_backend = OpenSandbox(
         volumes=[
             Volume(
-                name="workspace-root",
-                host=Host(
-                    path="/home/dev/liuyu/project/langchain-api/.langchain_api/workspace"
-                ),
+                name=f"workspace-root-{user_id}",
+                host=Host(path=get_user_workspace_path(user_id)),
                 mount_path="/workspace",
             )
         ]
