@@ -31,16 +31,16 @@ from langgraph.prebuilt.tool_node import ToolRuntime
 from langgraph.types import Command
 from opensandbox.models.sandboxes import Host, Volume
 
+from langchain_api.agent.agent import workspace_path
 from langchain_api.agent.context import AgentContext
 from langchain_api.sandbox.open_sandbox import OpenSandbox
 
-workspace_path = "/home/dev/liuyu/project/langchain-api/.langchain_api/workspace"
+token_limit = 20000
 
 
 def get_user_workspace_path(user_id: str) -> str:
-    new_workspace_path = Path(f"{workspace_path}/{user_id}/workspace").mkdir(
-        parents=True, exist_ok=True
-    )
+    new_workspace_path = Path(f"{workspace_path}/{user_id}/workspace")
+    new_workspace_path.mkdir(parents=True, exist_ok=True)
     return str(new_workspace_path)
 
 
@@ -57,11 +57,12 @@ def ls_tool(
         validated_path = validate_path(path)
     except ValueError as e:
         return f"Error: {e}"
+    workspace_path = get_user_workspace_path(user_id)
     backend = OpenSandbox(
         volumes=[
             Volume(
                 name=f"workspace-root-{user_id}",
-                host=Host(path=get_user_workspace_path(user_id)),
+                host=Host(path=workspace_path),
                 mount_path="/workspace",
             )
         ]
@@ -105,9 +106,6 @@ def execute_tool(
         parts.append("\n[Output was truncated due to size limits]")
     resolved_backend.sandbox.kill()
     return "".join(parts)
-
-
-token_limit = 20000
 
 
 @tool("read_file", description=READ_FILE_TOOL_DESCRIPTION)
@@ -356,12 +354,3 @@ def grep_tool(
     result = truncate_if_too_long(formatted)
     resolved_backend.sandbox.kill()
     return result
-
-
-# ['ls', 'read_file', 'write_file', 'edit_file', 'glob', 'grep']
-
-if __name__ == "__main__":
-    value = ls_tool.invoke({"path": "/workspace"})
-    print(value)
-    # value = execute_tool("env")
-    # print(value)
