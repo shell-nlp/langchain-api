@@ -36,6 +36,7 @@ from langchain_api.agent.context import AgentContext
 from langchain_api.sandbox.open_sandbox import OpenSandbox
 
 token_limit = 20000
+GLOB_TIMEOUT = 20.0  # seconds
 
 
 def get_user_workspace_path(user_id: str) -> str:
@@ -44,19 +45,8 @@ def get_user_workspace_path(user_id: str) -> str:
     return str(new_workspace_path)
 
 
-@tool("ls", description=LIST_FILES_TOOL_DESCRIPTION)
-def ls_tool(
-    path: Annotated[
-        str, "Absolute path to the directory to list. Must be absolute, not relative."
-    ],
-    runtime: ToolRuntime[AgentContext, None],
-):
-    """列出当前目录下的文件"""
+def get_backend(runtime: ToolRuntime[AgentContext, None]) -> OpenSandbox:
     user_id = runtime.context.user_id
-    try:
-        validated_path = validate_path(path)
-    except ValueError as e:
-        return f"Error: {e}"
     workspace_path = get_user_workspace_path(user_id)
     backend = OpenSandbox(
         volumes=[
@@ -67,6 +57,23 @@ def ls_tool(
             )
         ]
     )
+    return backend
+
+
+@tool("ls", description=LIST_FILES_TOOL_DESCRIPTION)
+def ls_tool(
+    path: Annotated[
+        str, "Absolute path to the directory to list. Must be absolute, not relative."
+    ],
+    runtime: ToolRuntime[AgentContext, None],
+):
+    """列出当前目录下的文件"""
+    backend = get_backend(runtime)
+    try:
+        validated_path = validate_path(path)
+    except ValueError as e:
+        return f"Error: {e}"
+
     infos = backend.ls_info(path=validated_path)
     paths = [fi.get("path", "") for fi in infos]
     result = truncate_if_too_long(paths)
@@ -84,16 +91,7 @@ def execute_tool(
     ] = None,
 ):
     """执行命令并返回结果"""
-    user_id = runtime.context.user_id
-    resolved_backend = OpenSandbox(
-        volumes=[
-            Volume(
-                name=f"workspace-root-{user_id}",
-                host=Host(path=get_user_workspace_path(user_id)),
-                mount_path="/workspace",
-            )
-        ]
-    )
+    resolved_backend = get_backend(runtime)
     result = resolved_backend.execute(command)
     # Format output for LLM consumption
     parts = [result.output]
@@ -123,20 +121,12 @@ def read_file(
     ] = DEFAULT_READ_LIMIT,
 ):
     """读取文件内容"""
-    user_id = runtime.context.user_id
+    backend = get_backend(runtime)
     try:
         validated_path = validate_path(file_path)
     except ValueError as e:
         return f"Error: {e}"
-    backend = OpenSandbox(
-        volumes=[
-            Volume(
-                name=f"workspace-root-{user_id}",
-                host=Host(path=get_user_workspace_path(user_id)),
-                mount_path="/workspace",
-            )
-        ]
-    )
+
     ext = Path(validated_path).suffix.lower()
     if ext in IMAGE_EXTENSIONS:
         responses = backend.download_files([validated_path])
@@ -189,16 +179,7 @@ def write_file(
     runtime: ToolRuntime[AgentContext, None],
 ):
     """写入文件内容"""
-    user_id = runtime.context.user_id
-    backend = OpenSandbox(
-        volumes=[
-            Volume(
-                name=f"workspace-root-{user_id}",
-                host=Host(path=get_user_workspace_path(user_id)),
-                mount_path="/workspace",
-            )
-        ]
-    )
+    backend = get_backend(runtime)
     try:
         validated_path = validate_path(file_path)
     except ValueError as e:
@@ -243,16 +224,7 @@ def edit_file(
     ] = False,
 ):
     """编辑文件内容"""
-    user_id = runtime.context.user_id
-    resolved_backend = OpenSandbox(
-        volumes=[
-            Volume(
-                name=f"workspace-root-{user_id}",
-                host=Host(path=get_user_workspace_path(user_id)),
-                mount_path="/workspace",
-            )
-        ]
-    )
+    resolved_backend = get_backend(runtime)
     try:
         validated_path = validate_path(file_path)
     except ValueError as e:
@@ -278,9 +250,6 @@ def edit_file(
     return f"Successfully replaced {res.occurrences} instance(s) of the string in '{res.path}'"
 
 
-GLOB_TIMEOUT = 20.0  # seconds
-
-
 @tool("glob", description=GLOB_TOOL_DESCRIPTION)
 def glob_tool(
     pattern: str,
@@ -292,16 +261,7 @@ def glob_tool(
         validated_path = validate_path(path)
     except ValueError as e:
         return f"Error: {e}"
-    user_id = runtime.context.user_id
-    resolved_backend = OpenSandbox(
-        volumes=[
-            Volume(
-                name=f"workspace-root-{user_id}",
-                host=Host(path=get_user_workspace_path(user_id)),
-                mount_path="/workspace",
-            )
-        ]
-    )
+    resolved_backend = get_backend(runtime)
     try:
         validated_path = validate_path(path)
     except ValueError as e:
@@ -337,16 +297,7 @@ def grep_tool(
 ):
     """使用grep模式搜索文件内容"""
 
-    user_id = runtime.context.user_id
-    resolved_backend = OpenSandbox(
-        volumes=[
-            Volume(
-                name=f"workspace-root-{user_id}",
-                host=Host(path=get_user_workspace_path(user_id)),
-                mount_path="/workspace",
-            )
-        ]
-    )
+    resolved_backend = get_backend(runtime)
     raw = resolved_backend.grep_raw(pattern, path=path, glob=glob)
     if isinstance(raw, str):
         return raw
