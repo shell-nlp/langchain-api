@@ -115,7 +115,7 @@ class Agent:
             tags=["agent"],
             extra_body={"enable_thinking": False},
         )
-        from langchain_api.tools import web_fetch, get_weather
+        from langchain_api.tools import get_weather, web_fetch
 
         backend = None
         tools.extend([get_weather, web_fetch])
@@ -131,7 +131,8 @@ class Agent:
         # 使用沙箱作为后端
         if settings.BACKEND_TYPE == "sandbox":
             from opensandbox.models.sandboxes import Host, Volume
-            from langchain_api.sandbox.open_sandbox import OpenSandbox
+
+            from langchain_api.backend.open_sandbox import OpenSandbox
 
             backend = OpenSandbox(
                 volumes=[

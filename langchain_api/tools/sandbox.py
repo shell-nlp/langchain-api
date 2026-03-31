@@ -33,7 +33,7 @@ from opensandbox.models.sandboxes import Host, Volume
 
 from langchain_api.agent.agent import workspace_path
 from langchain_api.agent.context import AgentContext
-from langchain_api.sandbox.open_sandbox import OpenSandbox
+from langchain_api.backend.open_sandbox import OpenSandbox
 
 token_limit = 20000
 GLOB_TIMEOUT = 20.0  # seconds

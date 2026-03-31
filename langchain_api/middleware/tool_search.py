@@ -1,9 +1,9 @@
 import re
-from typing import List, NotRequired
+from typing import NotRequired
 
 from langchain.agents import AgentState
 from langchain.agents.middleware import AgentMiddleware, ExtendedModelResponse
-from langchain.tools import BaseTool, ToolRuntime, tool
+from langchain.tools import ToolRuntime, tool
 from langchain_core.messages import ToolMessage
 from langchain_core.utils.function_calling import convert_to_openai_function
 from langgraph.types import Command
@@ -20,7 +20,7 @@ def _regex_score(pattern: str, tool: dict) -> int:
     return len(regex.findall(f"{tool['name']} {tool['description']}"))
 
 
-def deferred_tool_search(deferred_tool: List[dict], query: str) -> List[dict]:
+def deferred_tool_search(deferred_tool: list[dict], query: str) -> list[dict]:
     """按正则表达式模式搜索延迟工具，匹配名称和描述。支持三种查询形式（与 Claude Code 保持一致）：
     "select:name1,name2" — 精确匹配名称
     "+keyword rest" — 名称必须包含关键词，按 rest 排序
@@ -61,7 +61,7 @@ def deferred_tool_search(deferred_tool: List[dict], query: str) -> List[dict]:
 
 
 class ToolSearchState(AgentState):
-    deferred_tool: NotRequired[List[dict]]
+    deferred_tool: NotRequired[list[dict]]
 
 
 @tool
@@ -103,7 +103,8 @@ class DeferredToolMiddleware(AgentMiddleware):
         current_tool_names = [
             tool.name for tool in current_tools if tool.name != tool_search.name
         ]
-        deferred_tool_prompt = f"\n<available-deferred-tools>\n{'\n'.join(current_tool_names)}\n</available-deferred-tools>\n"
+        available_deferred_tools = "\n".join(current_tool_names)
+        deferred_tool_prompt = f"\n<available-deferred-tools>\n{available_deferred_tools}\n</available-deferred-tools>\n"
         new_system_prpmpt = request.system_prompt + deferred_tool_prompt
         deferred_tool = state.get("deferred_tool", None)
         update = None
@@ -136,7 +137,8 @@ class DeferredToolMiddleware(AgentMiddleware):
         current_tool_names = [
             tool.name for tool in current_tools if tool.name != tool_search.name
         ]
-        deferred_tool_prompt = f"\n<available-deferred-tools>\n{'\n'.join(current_tool_names)}\n</available-deferred-tools>\n"
+        available_deferred_tools = "\n".join(current_tool_names)
+        deferred_tool_prompt = f"\n<available-deferred-tools>\n{available_deferred_tools}\n</available-deferred-tools>\n"
         new_system_prpmpt = request.system_prompt + deferred_tool_prompt
         deferred_tool = state.get("deferred_tool", None)
         update = None
