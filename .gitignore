@@ -14,3 +14,4 @@ opencode.json
 .trae
 conversation_history/
 .langgraph_api
+logs/
