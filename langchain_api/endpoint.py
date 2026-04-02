@@ -3,6 +3,7 @@ from typing import Literal
 
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
+from langchain_core.messages import AIMessageChunk
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 from loguru import logger
@@ -125,6 +126,7 @@ def add_general_api_endpoint(
 
         async def stream_generator():
             text = ""
+            full_message = None
             async for mode, chunk in agent.astream(
                 input=input,
                 stream_mode=["messages", "updates"],
@@ -132,31 +134,35 @@ def add_general_api_endpoint(
                 context=Context(**request.model_dump()),
             ):
                 if mode == "messages":  # 只处理消息流
+                    msg: AIMessageChunk
                     msg, metadata = chunk
                     if metadata.get("tags", []) == ["agent"]:
-                        # reasoning_content 部分,reasoning_content 是单个token
-                        if msg.additional_kwargs.get("reasoning_content"):
-                            # 直接使用reasoning_content作为单个token
-                            stream_response.event = "token"
-                            stream_response.data = {
-                                "token": None,
-                                "id": msg.id,
-                                "reasoning_token": msg.additional_kwargs[
-                                    "reasoning_content"
-                                ],
-                            }
-                            text += msg.additional_kwargs["reasoning_content"]
-                            yield f"data: {stream_response.model_dump_json()}\n\n"
-                        if msg.content:
+                        if msg:
+                            full_message = (
+                                msg if full_message is None else full_message + msg
+                            )
+
                             # 直接使用msg.content作为单个token
                             stream_response.event = "token"
                             stream_response.data = {
-                                "token": msg.content,
+                                "token": msg.content if msg.content else None,
                                 "id": msg.id,
-                                "reasoning_token": None,
+                                "reasoning_token": msg.additional_kwargs.get(
+                                    "reasoning_content", None
+                                ),
+                                "tool_calls": full_message.tool_calls
+                                if full_message.tool_calls
+                                else None,
+                                "usage_metadata": msg.usage_metadata,
                             }
-                            text += msg.content
+                            # -------- 仅仅用于 打印 ---------
+                            if msg.additional_kwargs.get("reasoning_content", None):
+                                text += msg.additional_kwargs["reasoning_content"]
+                            if msg.content:
+                                text += msg.content
                             yield f"data: {stream_response.model_dump_json()}\n\n"
+                            if msg.chunk_position == "last":
+                                full_message = None
                 elif mode == "updates":  # 处理更新流
                     # print(f"\n[Update]: {chunk}")
 
