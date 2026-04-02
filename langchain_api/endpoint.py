@@ -1,12 +1,12 @@
-from typing import Literal
 import uuid
+from typing import Literal
 
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 from loguru import logger
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class GeneralAPIRequest(BaseModel):
@@ -52,9 +52,7 @@ class GeneralAPIRequest(BaseModel):
 
 
 class StreamResponse(BaseModel):
-    event: Literal[
-        "reasoning_token", "token", "tool_calls", "tool_output", "__interrupt__"
-    ] = "token"
+    event: Literal["token", "tool_calls", "tool_output", "__interrupt__"] = "token"
     data: dict | None = None
 
 
@@ -139,17 +137,24 @@ def add_general_api_endpoint(
                         # reasoning_content 部分,reasoning_content 是单个token
                         if msg.additional_kwargs.get("reasoning_content"):
                             # 直接使用reasoning_content作为单个token
-                            stream_response.event = "reasoning_token"
+                            stream_response.event = "token"
                             stream_response.data = {
-                                "token": msg.additional_kwargs["reasoning_content"],
+                                "token": None,
                                 "id": msg.id,
+                                "reasoning_token": msg.additional_kwargs[
+                                    "reasoning_content"
+                                ],
                             }
                             text += msg.additional_kwargs["reasoning_content"]
                             yield f"data: {stream_response.model_dump_json()}\n\n"
                         if msg.content:
                             # 直接使用msg.content作为单个token
                             stream_response.event = "token"
-                            stream_response.data = {"token": msg.content, "id": msg.id}
+                            stream_response.data = {
+                                "token": msg.content,
+                                "id": msg.id,
+                                "reasoning_token": None,
+                            }
                             text += msg.content
                             yield f"data: {stream_response.model_dump_json()}\n\n"
                 elif mode == "updates":  # 处理更新流
@@ -181,6 +186,7 @@ def add_general_api_endpoint(
                         stream_response.event = "tool_output"
                         stream_response.data = {
                             "tool_output": chunk["tools"]["messages"],
+                            "id": f"lc_run--{str(uuid.uuid4())}",
                         }
                         yield f"data: {stream_response.model_dump_json()}\n\n"
                         text += (
