@@ -9,7 +9,19 @@ from fastapi.staticfiles import StaticFiles
 from langchain_api.agent.agent import Agent
 from langchain_api.agent.context import AgentContext
 from langchain_api.endpoint import add_general_api_endpoint
+from langchain_api.patch.langchain import patch_langchain
 
+try:
+    # 添加可观测性组件
+    from phoenix.otel import register
+
+    tracer_provider = register(
+        project_name="default",
+        auto_instrument=True,
+    )
+except ImportError:
+    pass
+patch_langchain()
 root_path = Path(__file__).parent.parent.parent
 
 frontend_path = root_path / "frontend_old"

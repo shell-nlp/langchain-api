@@ -25,6 +25,8 @@ dependencies = [
     "opensandbox-server>=0.1.6",
     "opensandbox-code-interpreter>=0.1.1",
     "langgraph-checkpoint-postgres>=3.0.4",
+    "openinference-instrumentation-langchain>=0.1.62",
+    "arize-phoenix-otel>=0.15.0",
 ]
 
 [[tool.uv.index]]

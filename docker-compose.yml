@@ -1,0 +1,9 @@
+services:
+  phoenix:
+    image: docker.1ms.run/arizephoenix/phoenix:latest
+    container_name: phoenix
+    ports:
+      - 6006:6006
+      - 4317:4317
+    environment:
+      - PHOENIX_SQL_DATABASE_URL=postgresql://flow:flow@192.168.102.21:5432/phoenix
