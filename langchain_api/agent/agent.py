@@ -1,6 +1,5 @@
 import os
 import sys
-from pathlib import Path
 from typing import Any
 
 from deepagents import create_deep_agent
@@ -14,6 +13,7 @@ from loguru import logger
 
 from langchain_api.agent.context import AgentContext
 from langchain_api.agent.state import StateSchema
+from langchain_api.constant import home_path, workspace_path
 from langchain_api.settings import settings
 from langchain_api.utils import get_current_time
 
@@ -40,10 +40,7 @@ elif platform.startswith("darwin"):
     DEFUALT_SYSTEM_PROMPT = "你的运行环境是 macOS 系统, 你可以使用 macOS 相关的命令"
 else:
     DEFUALT_SYSTEM_PROMPT = f"你的运行环境未知: {platform}"
-root_dir = Path(__file__).parent.parent.parent
 
-home_path = root_dir / ".langchain_api"
-workspace_path = home_path / "workspace"
 skills = ["/workspace/skills"]
 
 

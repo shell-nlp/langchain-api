@@ -15,3 +15,4 @@ opencode.json
 conversation_history/
 .langgraph_api
 logs/
+.playwright-cli/
