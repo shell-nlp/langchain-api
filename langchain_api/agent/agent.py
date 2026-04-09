@@ -1,4 +1,5 @@
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -29,8 +30,16 @@ else:
 
     store = InMemoryStore()  # 长期记忆
     logger.info("使用InMemoryStore作为长期记忆")
-
-DEFUALT_SYSTEM_PROMPT = ""
+# 检查当前操作系统是Windows还是Linux
+platform = sys.platform
+if platform.startswith("win"):
+    DEFUALT_SYSTEM_PROMPT = "你的运行环境是 Windows 系统, 你可以使用 Windows 相关的命令"
+elif platform.startswith("linux"):
+    DEFUALT_SYSTEM_PROMPT = "你的运行环境是 Linux 系统, 你可以使用 Linux 相关的命令"
+elif platform.startswith("darwin"):
+    DEFUALT_SYSTEM_PROMPT = "你的运行环境是 macOS 系统, 你可以使用 macOS 相关的命令"
+else:
+    DEFUALT_SYSTEM_PROMPT = f"你的运行环境未知: {platform}"
 root_dir = Path(__file__).parent.parent.parent
 
 home_path = root_dir / ".langchain_api"
@@ -161,6 +170,7 @@ class Agent:
         def make_backend(runtime):
             from deepagents.backends import CompositeBackend, StoreBackend
 
+            nonlocal backend
             if settings.BACKEND_TYPE == "store":
                 backend = StoreBackend(runtime, namespace=user_namespace_factory)
 

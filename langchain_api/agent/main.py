@@ -1,5 +1,5 @@
 from pathlib import Path
-
+import os
 from ag_ui_langgraph import add_langgraph_fastapi_endpoint
 from copilotkit import LangGraphAGUIAgent
 from fastapi import FastAPI
@@ -12,13 +12,14 @@ from langchain_api.endpoint import add_general_api_endpoint
 from langchain_api.patch.langchain import patch_langchain
 
 try:
-    # 添加可观测性组件
-    from phoenix.otel import register
+    if os.getenv("PHOENIX_COLLECTOR_ENDPOINT"):
+        # 添加可观测性组件
+        from phoenix.otel import register
 
-    tracer_provider = register(
-        project_name="default",
-        auto_instrument=True,
-    )
+        tracer_provider = register(
+            project_name="default",
+            auto_instrument=True,
+        )
 except ImportError:
     pass
 patch_langchain()
