@@ -2,6 +2,7 @@ services:
   phoenix:
     image: docker.1ms.run/arizephoenix/phoenix:latest
     container_name: phoenix
+    restart: always
     ports:
       - 6006:6006
       - 4317:4317
