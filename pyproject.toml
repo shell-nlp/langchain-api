@@ -27,6 +27,8 @@ dependencies = [
     "langgraph-checkpoint-postgres>=3.0.4",
     "openinference-instrumentation-langchain>=0.1.62",
     "arize-phoenix-otel>=0.15.0",
+    "sqlmodel>=0.0.22",
+    "apscheduler>=3.11.0",
 ]
 
 [[tool.uv.index]]
