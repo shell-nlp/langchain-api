@@ -45,15 +45,15 @@ skills = ["/workspace/skills"]
 
 
 # https://github.com/CopilotKit/CopilotKit/issues/2646
-class BusinessMiddleware(AgentMiddleware):
+class BusinessMiddleware(AgentMiddleware[None, AgentContext, None]):
     """业务中间件，用于处理业务相关的逻辑"""
 
     state_schema = StateSchema
 
     def wrap_model_call(self, request, handler):
-        state = request.state
-        internet_search = state.get("internet_search", False)
-        deep_thinking = state.get("deep_thinking", False)
+        context: AgentContext = request.runtime.context
+        internet_search = context.internet_search
+        deep_thinking = context.deep_thinking
         if not internet_search:
             # 禁用互联网搜索相关的工具调用
             filtered_tools = [

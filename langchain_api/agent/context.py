@@ -4,9 +4,11 @@ from pydantic import BaseModel, Field
 
 
 class AgentContext(BaseModel):
-    # 会话ID，用于跟踪用户会话
-    session_id: str = Field(
-        default_factory=lambda: str(uuid.uuid4()), description="会话ID"
-    )
+    """都是在一次请求中不会改变的上下文"""
+
     # 用户ID，用于标识用户
     user_id: str = Field("default", description="用户ID")
+    # 是否启用联网搜索
+    internet_search: bool = Field(False, description="是否启用联网搜索")
+    # 是否启用深度思考
+    deep_thinking: bool = Field(False, description="是否启用深度思考")

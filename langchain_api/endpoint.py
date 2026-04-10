@@ -47,9 +47,10 @@ class GeneralAPIRequest(BaseModel):
             },
         ],
     )
-    # session_id 默认随机的uuid
-    session_id: str = str(uuid.uuid4())
-    user_id: str = "default"
+    # 会话ID，用于跟踪用户会话
+    session_id: str = Field(
+        default_factory=lambda: str(uuid.uuid4()), description="会话ID"
+    )
 
 
 class StreamResponse(BaseModel):
@@ -93,7 +94,7 @@ def add_general_api_endpoint(
             pass
 
         class Context(context):
-            model_config = ConfigDict(extra="allow")  # 允许额外字段
+            model_config = ConfigDict(extra="ignore")  # 忽略额外字段
 
     else:
         # 如果没有 context，直接使用 GeneralAPIRequest
@@ -186,7 +187,7 @@ def add_general_api_endpoint(
                             "id": chunk["model"]["messages"][0].id,
                         }
                         yield f"data: {stream_response.model_dump_json()}\n\n"
-                        text += f"\n{'-'*100}\n"
+                        text += f"\n{'-' * 100}\n"
 
                     if "tools" in chunk:
                         stream_response.event = "tool_output"
@@ -195,9 +196,7 @@ def add_general_api_endpoint(
                             "id": f"lc_run--{str(uuid.uuid4())}",
                         }
                         yield f"data: {stream_response.model_dump_json()}\n\n"
-                        text += (
-                            f"\n工具响应： \n{chunk['tools']['messages']}\n{'-'*100}\n"
-                        )
+                        text += f"\n工具响应： \n{chunk['tools']['messages']}\n{'-' * 100}\n"
 
             logger.info(f"session_id：{request.session_id} \nFinal Response: \n{text}")
 

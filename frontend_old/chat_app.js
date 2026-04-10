@@ -578,99 +578,74 @@ function handleStreamEvent(event) {
     
     switch (event.event) {
         case 'token':
-            //处理 token流
+            //处理 token流 (新API: reasoning_token 在 data 内部)
             console.log('处理 token 事件:', event.data);
-            if (event.data && event.data.token) {
+            if (event.data) {
                 const messageId = event.data.id;
                 
-                // 检查是否已经有相同 ID 的消息
-                if (messageIdMap.has(messageId)) {
-                    // 更新现有消息的内容
-                    const existingDiv = messageIdMap.get(messageId);
-                    const contentDiv = existingDiv.querySelector('.message-content');
+                // 处理深度思考内容 (新API格式: data.reasoning_token)
+                if (event.data.reasoning_token) {
+                    const reasoningToken = event.data.reasoning_token;
                     
-                    // 累积内容
-                    let accumulatedContent = messageContentMap.get(messageId) || '';
-                    accumulatedContent += event.data.token;
-                    messageContentMap.set(messageId, accumulatedContent);
-                    
-                    if (contentDiv) {
-                        // 使用 marked.js 渲染 Markdown
-                        contentDiv.innerHTML = marked.parse(accumulatedContent);
-                        console.log('更新消息内容:', event.data.token);
+                    if (messageIdMap.has(messageId)) {
+                        const existingDiv = messageIdMap.get(messageId);
+                        const reasoningContentDiv = existingDiv.querySelector('.reasoning-content');
+                        const reasoningContentWrapper = existingDiv.querySelector('.reasoning-content-wrapper');
+                        const reasoningContainer = existingDiv.querySelector('.reasoning-container');
+                        const toggleText = existingDiv.querySelector('.reasoning-toggle-text');
+                        const toggleIcon = existingDiv.querySelector('.reasoning-toggle-icon');
+                        
+                        let accumulatedReasoning = reasoningContentMap.get(messageId) || '';
+                        accumulatedReasoning += reasoningToken;
+                        reasoningContentMap.set(messageId, accumulatedReasoning);
+                        
+                        if (reasoningContentDiv) {
+                            reasoningContentDiv.innerHTML = marked.parse(accumulatedReasoning);
+                        }
+                        if (reasoningContentWrapper && reasoningContentWrapper.style.display === 'none') {
+                            reasoningContentWrapper.style.display = 'block';
+                            if (toggleText) toggleText.textContent = '折叠思考';
+                            if (toggleIcon) toggleIcon.style.transform = 'rotate(180deg)';
+                            if (reasoningContainer) reasoningContainer.classList.add('expanded');
+                        }
+                    } else {
+                        currentMessageDiv = addMessage('ai', '', { 
+                            messageId, 
+                            reasoningContent: reasoningToken 
+                        });
+                        messageIdMap.set(messageId, currentMessageDiv);
+                        reasoningContentMap.set(messageId, reasoningToken);
+                        
+                        const reasoningContentDiv = currentMessageDiv.querySelector('.reasoning-content');
+                        if (reasoningContentDiv) {
+                            reasoningContentDiv.innerHTML = marked.parse(reasoningToken);
+                        }
                     }
-                } else {
-                    // 创建新消息（没有深度思考内容的情况）
-                    console.log('创建新消息');
-                    currentMessageDiv = addMessage('ai', event.data.token, { messageId });
-                    messageIdMap.set(messageId, currentMessageDiv);
-                    // 初始化内容映射
-                    messageContentMap.set(messageId, event.data.token);
-                    
-                    // 立即渲染 Markdown
-                    const contentDiv = currentMessageDiv.querySelector('.message-content');
-                    if (contentDiv) {
-                        contentDiv.innerHTML = marked.parse(event.data.token);
-                    }
-                    console.log('新消息创建完成:', currentMessageDiv);
                 }
                 
-                // 自动滚动
-                const container = document.getElementById('chatContainer');
-                container.scrollTop = container.scrollHeight;
-            }
-            break;
-            
-        case 'reasoning_token':
-            //处理深度思考 token流
-            console.log('处理 reasoning_token 事件:', event.data);
-            if (event.data && event.data.token) {
-                const messageId = event.data.id;
-                
-                // 检查是否已经有相同 ID 的消息
-                if (messageIdMap.has(messageId)) {
-                    // 更新现有消息的深度思考内容
-                    const existingDiv = messageIdMap.get(messageId);
-                    const reasoningContentDiv = existingDiv.querySelector('.reasoning-content');
-                    const reasoningContentWrapper = existingDiv.querySelector('.reasoning-content-wrapper');
-                    const reasoningContainer = existingDiv.querySelector('.reasoning-container');
-                    const toggleText = existingDiv.querySelector('.reasoning-toggle-text');
-                    const toggleIcon = existingDiv.querySelector('.reasoning-toggle-icon');
-                    
-                    // 累积思考内容
-                    let accumulatedReasoning = reasoningContentMap.get(messageId) || '';
-                    accumulatedReasoning += event.data.token;
-                    reasoningContentMap.set(messageId, accumulatedReasoning);
-                    
-                    if (reasoningContentDiv) {
-                        // 使用 marked.js 渲染 Markdown
-                        reasoningContentDiv.innerHTML = marked.parse(accumulatedReasoning);
-                        console.log('更新现有深度思考内容');
+                // 处理普通 token 流
+                if (event.data.token) {
+                    if (messageIdMap.has(messageId)) {
+                        const existingDiv = messageIdMap.get(messageId);
+                        const contentDiv = existingDiv.querySelector('.message-content');
+                        
+                        let accumulatedContent = messageContentMap.get(messageId) || '';
+                        accumulatedContent += event.data.token;
+                        messageContentMap.set(messageId, accumulatedContent);
+                        
+                        if (contentDiv) {
+                            contentDiv.innerHTML = marked.parse(accumulatedContent);
+                        }
+                    } else {
+                        currentMessageDiv = addMessage('ai', event.data.token, { messageId });
+                        messageIdMap.set(messageId, currentMessageDiv);
+                        messageContentMap.set(messageId, event.data.token);
+                        
+                        const contentDiv = currentMessageDiv.querySelector('.message-content');
+                        if (contentDiv) {
+                            contentDiv.innerHTML = marked.parse(event.data.token);
+                        }
                     }
-                    // 确保深度思考区域是展开状态
-                    if (reasoningContentWrapper && reasoningContentWrapper.style.display === 'none') {
-                        reasoningContentWrapper.style.display = 'block';
-                        if (toggleText) toggleText.textContent = '折叠思考';
-                        if (toggleIcon) toggleIcon.style.transform = 'rotate(180deg)';
-                        if (reasoningContainer) reasoningContainer.classList.add('expanded');
-                    }
-                } else {
-                    // 创建新消息并显示深度思考内容
-                    console.log('创建新消息并显示深度思考内容');
-                    currentMessageDiv = addMessage('ai', '', { 
-                        messageId, 
-                        reasoningContent: event.data.token 
-                    });
-                    messageIdMap.set(messageId, currentMessageDiv);
-                    // 初始化思考内容映射
-                    reasoningContentMap.set(messageId, event.data.token);
-                    
-                    // 立即渲染 Markdown
-                    const reasoningContentDiv = currentMessageDiv.querySelector('.reasoning-content');
-                    if (reasoningContentDiv) {
-                        reasoningContentDiv.innerHTML = marked.parse(event.data.token);
-                    }
-                    console.log('新消息创建完成:', currentMessageDiv);
                 }
                 
                 // 自动滚动
