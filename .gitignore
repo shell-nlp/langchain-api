@@ -17,3 +17,5 @@ conversation_history/
 .langgraph_api
 logs/
 .playwright-cli/
+node_modules/
+.next/
