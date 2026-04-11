@@ -4,13 +4,11 @@ from langchain_elasticsearch import (
     DenseVectorStrategy,
     ElasticsearchStore,
 )
-from langchain_openai import OpenAIEmbeddings
 
 from langchain_api.settings import settings
+from langchain_api.utils import get_embedding_model
 
-embeddings = OpenAIEmbeddings(
-    model=settings.EMBEDDING_MODEL_NAME,
-)
+embeddings = get_embedding_model()
 vector_store = ElasticsearchStore(
     embedding=embeddings,
     index_name="236",  # 索引名

@@ -6,7 +6,6 @@ from deepagents import create_deep_agent
 from deepagents.backends.store import BackendContext
 from langchain.agents import create_agent
 from langchain.agents.middleware import AgentMiddleware, HumanInTheLoopMiddleware
-from langchain_deepseek import ChatDeepSeek
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph.state import CompiledStateGraph
 from loguru import logger
@@ -15,7 +14,7 @@ from langchain_api.agent.context import AgentContext
 from langchain_api.agent.state import StateSchema
 from langchain_api.constant import home_path, workspace_path
 from langchain_api.settings import settings
-from langchain_api.utils import get_current_time
+from langchain_api.utils import get_chat_model, get_current_time
 
 checkpointer = InMemorySaver()  # 短期记忆
 if settings.PG_DATABASE_URL:
@@ -114,13 +113,8 @@ class Agent:
         )
 
         system_prompt = system_prompt + get_current_time()
-        self.model = ChatDeepSeek(
-            model=settings.CHAT_MODEL_NAME,
-            api_base=settings.OPENAI_API_BASE,
-            api_key=settings.OPENAI_API_KEY,
-            tags=["agent"],
-            extra_body={"enable_thinking": False},
-        )
+        self.model = get_chat_model()
+        self.model.tags = ["agent"]
         from langchain_api.tools import get_weather, web_fetch
 
         backend = None
@@ -218,13 +212,7 @@ class Agent:
 
 
 if __name__ == "__main__":
-    model = ChatDeepSeek(
-        model=settings.CHAT_MODEL_NAME,
-        tags=["agent"],
-        api_base=settings.OPENAI_API_BASE,
-        api_key=settings.OPENAI_API_KEY,
-        extra_body={"enable_thinking": True},
-    )
+    model = get_chat_model()
     model.get_num_tokens_from_messages
     for chunk in model.stream("1+1="):
         print(chunk)
