@@ -1,3 +1,13 @@
+"""通用API端点
+要观察完整的响应格式请调用：
+post : http://localhost:7869/api/general_api (SSE 流式响应)
+请求体：
+{
+    "query": "南京天气怎么样",
+    "deep_thinking": true
+}
+"""
+
 import uuid
 from typing import Literal
 
