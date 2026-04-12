@@ -85,15 +85,14 @@ function getToolIcon(toolName: string): string {
 export default function ChatInterface() {
   const [messages, setMessages] = useState<Message[]>([])
   const [inputValue, setInputValue] = useState('')
-  const [sessionId] = useState(() => {
+  const [sessionId, setSessionId] = useState(() => {
+    // 在服务器端返回空字符串，在客户端生成新的会话ID
     if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('chat_session_id')
-      if (stored) return stored
       const newId = generateSessionId()
       localStorage.setItem('chat_session_id', newId)
       return newId
     }
-    return generateSessionId()
+    return ''
   })
   const [status, setStatus] = useState<'ready' | 'connecting' | 'error'>('ready')
   const [isProcessing, setIsProcessing] = useState(false)
@@ -121,6 +120,23 @@ export default function ChatInterface() {
   useEffect(() => {
     scrollToBottom()
   }, [messages, scrollToBottom])
+
+  // 监听localStorage中的会话ID变化，确保多个标签页之间的同步
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const handleStorageChange = (event: StorageEvent) => {
+        if (event.key === 'chat_session_id' && event.newValue) {
+          setSessionId(event.newValue)
+        }
+      }
+      
+      window.addEventListener('storage', handleStorageChange)
+      
+      return () => {
+        window.removeEventListener('storage', handleStorageChange)
+      }
+    }
+  }, [])
 
   const addMessage = useCallback((message: Message) => {
     setMessages(prev => {
@@ -411,6 +427,7 @@ export default function ChatInterface() {
     setMessages([])
     const newId = generateSessionId()
     localStorage.setItem('chat_session_id', newId)
+    setSessionId(newId)
   }
 
   const abortRequest = () => {
