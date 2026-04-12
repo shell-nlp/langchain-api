@@ -109,6 +109,8 @@ export default function ChatInterface() {
   const contentAccumulatorRef = useRef<Map<string, string>>(new Map())
   const reasoningAccumulatorRef = useRef<Map<string, string>>(new Map())
   const pendingToolCallsRef = useRef<Map<string, { tool_calls: StreamEvent['data']['tool_calls'], messageId: string }>>(new Map())
+  const processedToolCallIdsRef = useRef<Set<string>>(new Set())
+  const lastToolMessageIdRef = useRef<string | null>(null)
 
   const scrollToBottom = useCallback(() => {
     if (chatContainerRef.current) {
@@ -164,19 +166,30 @@ export default function ChatInterface() {
       case 'token': {
         const messageId = data.id || ''
         
+        // 检查是否已经存在该消息
+        const existingMessage = messageIdMapRef.current.has(messageId)
+        
+        // 检查是否存在相关的工具调用消息
+        let relatedToolMessageId: string | null = null
+        if (lastToolMessageIdRef.current) {
+          // 使用存储的最后一个工具消息ID
+          relatedToolMessageId = lastToolMessageIdRef.current
+        }
+        
         if (data.reasoning_token) {
           const current = reasoningAccumulatorRef.current.get(messageId) || ''
           const updated = current + data.reasoning_token
           reasoningAccumulatorRef.current.set(messageId, updated)
           
-          if (messageIdMapRef.current.has(messageId)) {
+          if (existingMessage) {
             updateMessageContent(messageId, updated, true)
           } else {
+            // 只创建一个消息，包含思考内容
             const newMsg: Message = {
               id: messageId,
               role: 'ai',
-              content: '',
-              reasoningContent: data.reasoning_token
+              content: data.token || '',
+              reasoningContent: updated
             }
             addMessage(newMsg)
             messageIdMapRef.current.set(messageId, messageId)
@@ -184,33 +197,49 @@ export default function ChatInterface() {
         }
         
         if (data.token) {
-          const current = contentAccumulatorRef.current.get(messageId) || ''
-          const updated = current + data.token
-          contentAccumulatorRef.current.set(messageId, updated)
-          
-          if (messageIdMapRef.current.has(messageId)) {
-            updateMessageContent(messageId, updated, false)
+          // 检查是否有相关的工具调用消息
+          if (lastToolMessageIdRef.current) {
+            // 累积工具消息的内容
+            const current = contentAccumulatorRef.current.get(lastToolMessageIdRef.current) || ''
+            const updated = current + data.token
+            contentAccumulatorRef.current.set(lastToolMessageIdRef.current, updated)
+            // 更新工具调用消息的内容
+            updateMessageContent(lastToolMessageIdRef.current, updated, false)
           } else {
-            const newMsg: Message = {
-              id: messageId,
-              role: 'ai',
-              content: data.token
+            const current = contentAccumulatorRef.current.get(messageId) || ''
+            const updated = current + data.token
+            contentAccumulatorRef.current.set(messageId, updated)
+            
+            if (existingMessage) {
+              updateMessageContent(messageId, updated, false)
+            } else if (!data.reasoning_token) {
+              // 只有在没有思考内容和工具调用时才创建新消息
+              const newMsg: Message = {
+                id: messageId,
+                role: 'ai',
+                content: updated
+              }
+              addMessage(newMsg)
+              messageIdMapRef.current.set(messageId, messageId)
             }
-            addMessage(newMsg)
-            messageIdMapRef.current.set(messageId, messageId)
           }
         }
         break
       }
       
       case 'tool_calls': {
-        if (data.tool_calls && data.id) {
-          const msgId = data.id
+        if (data.tool_calls) {
+          const msgId = data.id || ''
+          
+          // 移除临时消息（但保留思考内容用于后续显示）
           if (messageIdMapRef.current.has(msgId)) {
             messageIdMapRef.current.delete(msgId)
             contentAccumulatorRef.current.delete(msgId)
+            // 从messages状态中删除该消息，避免重复显示
             setMessages(prev => prev.filter(m => m.id !== msgId))
           }
+          
+          // 暂存工具调用信息，关联到原始 msgId
           pendingToolCallsRef.current.set(msgId, {
             tool_calls: data.tool_calls,
             messageId: msgId
@@ -221,44 +250,49 @@ export default function ChatInterface() {
       
       case 'tool_output': {
         if (data.tool_output) {
-          let matchedCall: { id: string; name: string; args: Record<string, unknown> } | null = null
-          let matchedMsgId: string | null = null
-          
-          for (const [msgId, pendingData] of pendingToolCallsRef.current) {
-            const match = pendingData.tool_calls?.find(call =>
-              data.tool_output?.some(output => output.tool_call_id === call.id)
-            )
-            if (match) {
-              matchedCall = match
-              matchedMsgId = msgId
-              break
+          for (const output of data.tool_output) {
+            if (processedToolCallIdsRef.current.has(output.tool_call_id)) {
+              continue
             }
-          }
-          
-          if (matchedCall && matchedMsgId) {
-            pendingToolCallsRef.current.delete(matchedMsgId)
+            processedToolCallIdsRef.current.add(output.tool_call_id)
             
-            const toolMsg: Message = {
-              id: matchedMsgId,
-              role: 'ai',
-              content: '',
-              isToolCall: true,
-              toolData: {
-                toolCall: matchedCall,
-                toolOutput: data.tool_output
+            let matchedCall: { id: string; name: string; args: Record<string, unknown> } | null = null
+            let matchedMsgId: string | null = null
+            
+            for (const [msgId, pendingData] of pendingToolCallsRef.current) {
+              const match = pendingData.tool_calls?.find(call => call.id === output.tool_call_id)
+              if (match) {
+                matchedCall = match
+                matchedMsgId = msgId
+                break
               }
             }
-            addMessage(toolMsg)
-            messageIdMapRef.current.set(matchedMsgId, matchedMsgId)
-          } else {
-            const toolMsg: Message = {
-              id: generateMessageId(),
-              role: 'ai',
-              content: '',
-              isToolCall: true,
-              toolData: { toolOutput: data.tool_output }
+            
+            if (matchedCall && matchedMsgId) {
+              pendingToolCallsRef.current.delete(matchedMsgId)
+              
+              const reasoningContent = reasoningAccumulatorRef.current.get(matchedMsgId)
+              reasoningAccumulatorRef.current.delete(matchedMsgId)
+              
+              // 生成唯一的工具消息ID
+              const toolMsgId = `tool_${matchedMsgId || 'unknown'}_${output.tool_call_id}`
+              
+              const toolMsg: Message = {
+                id: toolMsgId,
+                role: 'ai',
+                content: '',
+                reasoningContent: reasoningContent || undefined,
+                isToolCall: true,
+                toolData: {
+                  toolCall: matchedCall,
+                  toolOutput: [output]
+                }
+              }
+              addMessage(toolMsg)
+              
+              // 存储最后一个工具消息ID
+              lastToolMessageIdRef.current = toolMsgId
             }
-            addMessage(toolMsg)
           }
         }
         break
@@ -294,6 +328,9 @@ export default function ChatInterface() {
     
     setIsProcessing(true)
     setStatus('connecting')
+    
+    // 重置工具消息ID
+    lastToolMessageIdRef.current = null
     
     abortControllerRef.current = new AbortController()
 
@@ -359,6 +396,7 @@ export default function ChatInterface() {
       contentAccumulatorRef.current.clear()
       reasoningAccumulatorRef.current.clear()
       pendingToolCallsRef.current.clear()
+      processedToolCallIdsRef.current.clear()
     }
   }
 
@@ -458,6 +496,7 @@ export default function ChatInterface() {
       contentAccumulatorRef.current.clear()
       reasoningAccumulatorRef.current.clear()
       pendingToolCallsRef.current.clear()
+      processedToolCallIdsRef.current.clear()
     }
   }
 
@@ -591,7 +630,34 @@ export default function ChatInterface() {
               ) : (
                 <>
                   {msg.isToolCall && msg.toolData ? (
-                    <ToolCard toolData={msg.toolData} />
+                    <>
+                      <div className={styles.messageHeader}>
+                        <div className={`${styles.avatar} ${styles.ai}`}>
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 2a2 2 0 012 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 017 7h1a1 1 0 011 1v3a1 1 0 01-1 1h-1v1a2 2 0 01-2 2H5a2 2 0 01-2-2v-1H2a1 1 0 01-1-1v-3a1 1 0 011-1h1a7 7 0 017-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 012-2M7.5 13a1.5 1.5 0 100 3 1.5 1.5 0 000-3m9 0a1.5 1.5 0 100 3 1.5 1.5 0 000-3"/>
+                          </svg>
+                        </div>
+                        <span className={styles.author}>AI 助手</span>
+                        <span className={styles.time}>{new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span>
+                      </div>
+                      {msg.reasoningContent && (
+                        <div className={styles.reasoningContainer}>
+                          <div className={styles.reasoningHeader}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <circle cx="12" cy="12" r="10"/>
+                              <path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/>
+                              <line x1="12" y1="17" x2="12.01" y2="17"/>
+                            </svg>
+                            <span>深度思考</span>
+                          </div>
+                          <div className={styles.reasoningContent} dangerouslySetInnerHTML={{ __html: parseMarkdown(msg.reasoningContent) }} />
+                        </div>
+                      )}
+                      <ToolCard toolData={msg.toolData} />
+                      {msg.content && (
+                        <div className={styles.messageContent} dangerouslySetInnerHTML={{ __html: parseMarkdown(msg.content) }} />
+                      )}
+                    </>
                   ) : (
                     <>
                       <div className={styles.messageHeader}>

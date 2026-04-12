@@ -1,11 +1,11 @@
 import os
-from pathlib import Path
 
 from ag_ui_langgraph import add_langgraph_fastapi_endpoint
 from copilotkit import LangGraphAGUIAgent
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 
 from langchain_api.agent.agent import Agent
 from langchain_api.agent.context import AgentContext
@@ -29,7 +29,14 @@ patch_langchain()
 frontend_path = root_dir / "frontend_old"
 
 app = FastAPI()
-
+# 解决跨域问题
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 # 将 html 路由到 /
 app.mount(
     "/web",
