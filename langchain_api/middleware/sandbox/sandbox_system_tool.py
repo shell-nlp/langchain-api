@@ -97,6 +97,8 @@ GLOB_TIMEOUT = 20.0  # seconds
 def get_user_workspace_path(user_id: str) -> str:
     new_workspace_path = Path(f"{workspace_path}/{user_id}/.langclaw")
     new_workspace_path.mkdir(parents=True, exist_ok=True)
+    conversation_history = new_workspace_path / "conversation_history"
+    conversation_history.mkdir(parents=True, exist_ok=True)
     return str(new_workspace_path)
 
 
@@ -118,7 +120,12 @@ def get_new_backend(
                 name=f"langclaw-{user_id}",
                 host=Host(path=workspace_path),
                 mount_path="/.langclaw",
-            )
+            ),
+            Volume(
+                name=f"langclaw-conversation-history-{user_id}",
+                host=Host(path=workspace_path + "/conversation_history"),
+                mount_path="/conversation_history",
+            ),
         ]
     )
 
