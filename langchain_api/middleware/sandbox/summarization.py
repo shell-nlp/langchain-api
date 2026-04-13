@@ -204,7 +204,7 @@ class LangClawSummarizationMiddleware(SummarizationMiddleware):
         # Modify request to use summarized messages
         modified_messages = [*new_messages, *preserved_messages]
         response = await handler(request.override(messages=modified_messages))
-        backend.sandbox.kill()
+        # backend.sandbox.kill()
         # Return ExtendedModelResponse with state update
         return ExtendedModelResponse(
             model_response=response,
