@@ -194,9 +194,9 @@ def execute_tool(
     # Format output for LLM consumption
     parts = [result.output]
 
-    if result.exit_code is not None:
-        status = "succeeded" if result.exit_code == 0 else "failed"
-        parts.append(f"\n[Command {status} with exit code {result.exit_code}]")
+    # if result.exit_code is not None:
+    #     status = "succeeded" if result.exit_code == 0 else "failed"
+    #     parts.append(f"\n[Command {status} with exit code {result.exit_code}]")
 
     if result.truncated:
         parts.append("\n[Output was truncated due to size limits]")

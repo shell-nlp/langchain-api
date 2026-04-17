@@ -8,7 +8,6 @@ from langchain_api.settings import settings
 
 shanghai_tz = ZoneInfo("Asia/Shanghai")  # 设置亚洲/上海时区
 
-
 def get_current_time() -> str:
     # 星期几的映射表
     weekday_map = {

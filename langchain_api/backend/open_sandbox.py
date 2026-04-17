@@ -1,7 +1,7 @@
 from datetime import timedelta
 from pathlib import Path
-import tomllib
 
+import tomllib
 from deepagents.backends.sandbox import (
     BaseSandbox,
     ExecuteResponse,
@@ -12,6 +12,9 @@ from deepagents.backends.sandbox import (
 from opensandbox import SandboxSync
 from opensandbox.config import ConnectionConfigSync
 from opensandbox.models import WriteEntry
+from opensandbox.models.execd import (
+    RunCommandOpts,
+)
 from opensandbox.models.sandboxes import Host, Volume
 
 with open(Path(__file__).parent.parent.parent / ".sandbox.toml", "rb") as f:
@@ -48,13 +51,22 @@ class OpenSandbox(BaseSandbox):
     def execute(self, command: str, *, timeout: int | None = None) -> ExecuteResponse:
         with self.sandbox:
             exit_code = 0
+            if timeout is None:
+                timeout = 60 * 10
             try:
-                execution = self.sandbox.commands.run(command)
-                output = execution.logs.stdout
-                if output:
-                    output = "\n".join([msg.text for msg in output])
-                else:
-                    output = ""
+                # TODO 内部调用 http 沙盒的接口的超时，官方未传递 timeout 参数
+                execution = self.sandbox.commands.run(
+                    command,
+                    opts=RunCommandOpts(
+                        timeout=timedelta(seconds=timeout or self.timeout)
+                    ),
+                )
+                output = str(execution)
+                # output = execution.logs.stdout
+                # if output:
+                #     output = "\n".join([msg.text for msg in output])
+                # else:
+                #     output = ""
             except Exception as e:
                 output = str(e)
                 exit_code = 1
