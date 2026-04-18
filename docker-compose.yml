@@ -1,4 +1,31 @@
 services:
+  elasticsearch:
+      image: docker.1ms.run/elastic/elasticsearch:8.14.2
+      container_name: elasticsearch
+      restart: always
+      environment:
+        - discovery.type=single-node
+        - cluster.max_shards_per_node=10000
+        - ES_JAVA_OPTS=-Xms1g -Xmx1g
+        # - xpack.security.enabled=false
+        - xpack.security.enabled=true   # 强制启用安全模块
+        - ELASTIC_PASSWORD=elastic@2024  # 设置elastic超级用户密码
+        # - ELASTIC_USERNAME=elastic  # 显式声明用户名（可选）
+        - TZ=Asia/Shanghai
+        - http.max_content_length=500mb  # 在这里增加
+      volumes:
+        - ./assets/es_plugins/ik-8.14.2:/usr/share/elasticsearch/plugins
+        - es_data:/usr/share/elasticsearch/data
+        # - es_plugin:/usr/share/elasticsearch/plugins
+        - es_config:/usr/share/elasticsearch/config
+        # 如果需要持久化日志，请取消以下行的注释
+        - es_logs:/usr/share/elasticsearch/logs
+
+      ports:
+        - target: 9200
+          published: 9200
+      networks:
+        - elastic
   phoenix:
     image: docker.1ms.run/arizephoenix/phoenix:latest
     container_name: phoenix
@@ -8,3 +35,33 @@ services:
       - 4317:4317
     environment:
       - PHOENIX_SQL_DATABASE_URL=postgresql://flow:flow@192.168.102.21:5432/phoenix
+
+
+volumes:
+  es_data:
+    driver: local
+    # driver_opts:
+    #   type: none
+    #   device: /home/data/docker/volumes/01middleware_es_data/
+    #   o: bind
+  # es_plugin:
+  #   driver: local
+  es_config:
+    driver: local
+    # driver_opts:
+    #   type: none
+    #   device: /home/data/docker/volumes/01middleware_es_config/
+    #   o: bind
+  es_logs:
+    driver: local
+    # driver_opts:
+    #   type: none
+    #   device: /home/data/docker/volumes/01middleware_es_logs/
+    #   o: bind
+    
+
+networks:
+  elastic:
+    name: elastic
+    driver: bridge
+    external: true
