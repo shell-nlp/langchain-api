@@ -1,4 +1,17 @@
 services:
+  postgresql:
+    image: docker.1ms.run/postgres:16
+    restart: always
+    environment:
+      - POSTGRES_USER=admin  # 数据库用户名
+      - POSTGRES_PASSWORD=admin # 数据库密码（必填）
+      - POSTGRES_DB=langchain_api # 默认数据库名
+    ports:
+      - 5432:5432
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    networks:
+      - langchain_api
   elasticsearch:
       image: docker.1ms.run/elastic/elasticsearch:8.14.2
       container_name: elasticsearch
@@ -25,7 +38,7 @@ services:
         - target: 9200
           published: 9200
       networks:
-        - elastic
+        - langchain_api
   phoenix:
     image: docker.1ms.run/arizephoenix/phoenix:latest
     container_name: phoenix
@@ -34,10 +47,12 @@ services:
       - 6006:6006
       - 4317:4317
     environment:
-      - PHOENIX_SQL_DATABASE_URL=postgresql://flow:flow@192.168.102.21:5432/phoenix
+      - PHOENIX_SQL_DATABASE_URL=postgresql://admin:admin@192.168.102.21:5432/phoenix
 
 
 volumes:
+  postgres:
+    driver: local 
   es_data:
     driver: local
     # driver_opts:
@@ -61,7 +76,7 @@ volumes:
     
 
 networks:
-  elastic:
-    name: elastic
+  langchain_api:
+    name: langchain_api
     driver: bridge
-    external: true
+    # external: true
