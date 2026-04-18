@@ -154,7 +154,8 @@ shanghai_tz = ZoneInfo("Asia/Shanghai")  # 设置亚洲/上海时区
 
 
 class CustomState(AgentState):
-    docs: NotRequired[List[Document]]  # 持久化计数器
+    docs: NotRequired[List[Document]]
+    system_msg: NotRequired[SystemMessage]
 
 
 class RAGMiddleware(AgentMiddleware[CustomState]):
@@ -185,11 +186,10 @@ class RAGMiddleware(AgentMiddleware[CustomState]):
         self.rewrite_query = rewrite_query
         self.model: ChatDeepSeek = model
         self.retrieve_router = retrieve_router
-        self.system_msg = None
         if rewrite_query and not self.model:
             raise AssertionError("当 rewrite_query 为 True 时，model 不能为空")
 
-    def _rewrite_query(self, query: str, messages: List[BaseMessage]) -> str:
+    def _get_rewrite_query(self, query: str, messages: List[BaseMessage]) -> str:
         """用户根据历史消息重写query
 
         Parameters
@@ -252,18 +252,36 @@ class RAGMiddleware(AgentMiddleware[CustomState]):
             router = value["路由"]
         return router
 
+    def _get_retrieve_result(self, query: str, k: int = 3) -> List[Document]:
+        """根据query检索结果
+
+        Parameters
+        ----------
+        query : str
+            用户query
+        k : int, optional
+            检索结果数量, by default 3
+
+        Returns
+        -------
+        List[Document]
+            检索结果
+        """
+        return self.vector_store.similarity_search_with_score(query, k=k)
+
     def before_model(self, state: CustomState, runtime: Runtime):
         """RAG 每次的输入只能有 system 和 human 两个"""
         messages = state["messages"]
         last_msg: HumanMessage = messages[-1]
         query = last_msg.content
         # 改写问题
-        query = self._rewrite_query(query, messages)
+        query = self._get_rewrite_query(query, messages)
         # 检索路由
         router = self._retrieve_router(query)
 
         if router == "RAG":
-            retrieved_docs = self.vector_store.similarity_search_with_score(query, k=3)
+            # 检索结果
+            retrieved_docs = self._get_retrieve_result(query, k=3)
             context = ""
             docs = []
             for idx, (doc, socre) in enumerate(retrieved_docs, start=1):
@@ -278,10 +296,10 @@ class RAGMiddleware(AgentMiddleware[CustomState]):
                 content=RAG_SYSTEM_PROMPT.format(context=context) + cur_time
             )
 
-            self.system_msg = sys_msg
             return {
                 "docs": docs,
+                "system_msg": sys_msg,
             }
 
     def wrap_model_call(self, request, handler):
-        return handler(request.override(system_message=self.system_msg))
+        return handler(request.override(system_message=request.state["system_msg"]))
