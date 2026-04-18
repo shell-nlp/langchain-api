@@ -148,7 +148,9 @@ class Agent:
             # 使用虚拟文件系统作为后端
             from deepagents.backends.local_shell import LocalShellBackend
 
-            backend = LocalShellBackend(root_dir=home_path, virtual_mode=True)
+            backend = LocalShellBackend(
+                root_dir=home_path, virtual_mode=True, inherit_env=True
+            )
             logger.info("使用 LocalShellBackend 作为后端")
 
         # -------------------------------

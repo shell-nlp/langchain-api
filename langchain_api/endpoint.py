@@ -61,6 +61,10 @@ class GeneralAPIRequest(BaseModel):
     session_id: str = Field(
         default_factory=lambda: str(uuid.uuid4()), description="会话ID"
     )
+    stream: bool = Field(
+        default=True,
+        description="是否流式响应token",
+    )
 
 
 class StreamResponse(BaseModel):
@@ -135,7 +139,7 @@ def add_general_api_endpoint(
 
         stream_response = StreamResponse()
 
-        async def stream_generator():
+        async def stream_token_generator():
             text = ""
             full_message = None
             async for mode, chunk in agent.astream(
@@ -210,4 +214,70 @@ def add_general_api_endpoint(
 
             logger.info(f"session_id：{request.session_id} \nFinal Response: \n{text}")
 
-        return StreamingResponse(stream_generator(), media_type="text/event-stream")
+        async def generator():
+            async for mode, chunk in agent.astream(
+                input=input,
+                stream_mode=["updates"],
+                config=config,
+                context=Context(**request.model_dump()),
+            ):
+                if mode == "updates":
+                    print(f"\n[Update]: {chunk}")
+                    if "__interrupt__" in chunk:  # 处理 Human in the Loop
+                        stream_response.event = "__interrupt__"
+                        stream_response.data = {
+                            "__interrupt__": chunk["__interrupt__"][0].value
+                        }
+                        yield f"data: {stream_response.model_dump_json()}\n\n"
+
+                    if (
+                        "model" in chunk
+                        and not chunk["model"]["messages"][0].tool_calls
+                    ):
+                        # 这个是最后一次整体的 tool 内容
+                        ...
+                    # if "model" in chunk and chunk["model"]["messages"][0].tool_calls:
+                    #     stream_response.event = "tool_calls"
+                    #     stream_response.data = {
+                    #         "tool_calls": chunk["model"]["messages"][0].tool_calls,
+                    #         "id": chunk["model"]["messages"][0].id,
+                    #     }
+                    #     yield f"data: {stream_response.model_dump_json()}\n\n"
+                    if "model" in chunk and chunk["model"]["messages"][0].tool_calls:
+                        messages = chunk["model"]["messages"][0]
+                        stream_response.event = "token"
+                        stream_response.data = {
+                            "token": messages.content if messages.content else None,
+                            "id": messages.id,
+                            "reasoning_token": messages.additional_kwargs.get(
+                                "reasoning_content", None
+                            ),
+                            "tool_calls": messages.tool_calls
+                            if messages.tool_calls
+                            else None,
+                            "usage_metadata": messages.usage_metadata,
+                        }
+                        yield f"data: {stream_response.model_dump_json()}\n\n"
+
+                        if messages.tool_calls:
+                            stream_response.event = "tool_calls"
+                            stream_response.data = {
+                                "tool_calls": messages.tool_calls,
+                                "id": messages.id,
+                            }
+                            yield f"data: {stream_response.model_dump_json()}\n\n"
+
+                    if "tools" in chunk:
+                        stream_response.event = "tool_output"
+                        stream_response.data = {
+                            "tool_output": chunk["tools"]["messages"],
+                            "id": f"lc_run--{str(uuid.uuid4())}",
+                        }
+                        yield f"data: {stream_response.model_dump_json()}\n\n"
+
+        if request.stream:
+            return StreamingResponse(
+                stream_token_generator(), media_type="text/event-stream"
+            )
+        else:
+            return StreamingResponse(generator(), media_type="text/event-stream")
