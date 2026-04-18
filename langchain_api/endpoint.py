@@ -243,7 +243,7 @@ def add_general_api_endpoint(
                     #         "id": chunk["model"]["messages"][0].id,
                     #     }
                     #     yield f"data: {stream_response.model_dump_json()}\n\n"
-                    if "model" in chunk and chunk["model"]["messages"][0].tool_calls:
+                    if "model" in chunk and chunk["model"]["messages"][0]:
                         messages = chunk["model"]["messages"][0]
                         stream_response.event = "token"
                         stream_response.data = {
