@@ -8,12 +8,13 @@ from langchain_api.middleware import RAGMiddleware
 from langchain_api.rag.context import AgentContext
 from langchain_api.retriever import vector_store
 from langchain_api.settings import settings
+from langchain_api.middleware.common import BusinessMiddleware
 
 app = FastAPI()
 
 model = ChatDeepSeek(
     model=settings.CHAT_MODEL_NAME,
-    tags=["rag"],
+    tags=["agent"],
     api_base=settings.OPENAI_API_BASE,
     api_key=settings.OPENAI_API_KEY,
 )
@@ -33,6 +34,7 @@ agent = create_agent(
             model=rewrite_model,
             retrieve_router=True,
         ),
+        BusinessMiddleware(),
     ],
     checkpointer=checkpointer,
 )

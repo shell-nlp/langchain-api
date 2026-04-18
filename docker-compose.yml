@@ -23,14 +23,14 @@ services:
         # - xpack.security.enabled=false
         - xpack.security.enabled=true   # 强制启用安全模块
         - ELASTIC_PASSWORD=elastic@2024  # 设置elastic超级用户密码
-        # - ELASTIC_USERNAME=elastic  # 显式声明用户名（可选）
+        - ELASTIC_USERNAME=elastic  # 显式声明用户名（可选）
         - TZ=Asia/Shanghai
         - http.max_content_length=500mb  # 在这里增加
       volumes:
         - ./assets/es_plugins/ik-8.14.2:/usr/share/elasticsearch/plugins
         - es_data:/usr/share/elasticsearch/data
         # - es_plugin:/usr/share/elasticsearch/plugins
-        - es_config:/usr/share/elasticsearch/config
+        # - es_config:/usr/share/elasticsearch/config
         # 如果需要持久化日志，请取消以下行的注释
         - es_logs:/usr/share/elasticsearch/logs
 
@@ -46,8 +46,12 @@ services:
     ports:
       - 6006:6006
       - 4317:4317
+    depends_on:
+      - postgresql
+    networks:
+      - langchain_api
     environment:
-      - PHOENIX_SQL_DATABASE_URL=postgresql://admin:admin@192.168.102.21:5432/phoenix
+      - PHOENIX_SQL_DATABASE_URL=postgresql://admin:admin@postgresql:5432/phoenix
 
 
 volumes:

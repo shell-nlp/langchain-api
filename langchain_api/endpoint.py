@@ -222,7 +222,7 @@ def add_general_api_endpoint(
                 context=Context(**request.model_dump()),
             ):
                 if mode == "updates":
-                    print(f"\n[Update]: {chunk}")
+                    # print(f"\n[Update]: {chunk}")
                     if "__interrupt__" in chunk:  # 处理 Human in the Loop
                         stream_response.event = "__interrupt__"
                         stream_response.data = {

@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime
 from typing import List, Literal, NotRequired, TypedDict
 from zoneinfo import ZoneInfo
@@ -278,7 +279,10 @@ class RAGMiddleware(AgentMiddleware[CustomState]):
         query = self._get_rewrite_query(query, messages)
         # 检索路由
         router = self._retrieve_router(query)
-
+        current_time = datetime.now(shanghai_tz)
+        cur_time = f"""\n<当前的时间>当前的时间: {current_time.year}年{current_time.month}月{current_time.day}日
+如果问题中提供的时间超过当前的时间，必须指出问题中的时间尚未到来。
+</当前的时间>"""
         if router == "RAG":
             # 检索结果
             retrieved_docs = self._get_retrieve_result(query, k=3)
@@ -287,10 +291,6 @@ class RAGMiddleware(AgentMiddleware[CustomState]):
             for idx, (doc, socre) in enumerate(retrieved_docs, start=1):
                 docs.append(doc)
                 context += f"文档 {idx}: \n{doc.page_content}\n\n"
-            current_time = datetime.now(shanghai_tz)
-            cur_time = f"""\n<当前的时间>当前的时间: {current_time.year}年{current_time.month}月{current_time.day}日
-如果问题中提供的时间超过当前的时间，必须指出问题中的时间尚未到来。
-</当前的时间>"""
 
             sys_msg = SystemMessage(
                 content=RAG_SYSTEM_PROMPT.format(context=context) + cur_time
@@ -300,6 +300,20 @@ class RAGMiddleware(AgentMiddleware[CustomState]):
                 "docs": docs,
                 "system_msg": sys_msg,
             }
+        else:
+            sys_msg = SystemMessage(content=cur_time)
+            return {
+                "system_msg": sys_msg,
+            }
+
+    async def abefore_model(self, state: CustomState, runtime: Runtime):
+
+        return await asyncio.to_thread(self.before_model, state, runtime)
 
     def wrap_model_call(self, request, handler):
         return handler(request.override(system_message=request.state["system_msg"]))
+
+    async def awrap_model_call(self, request, handler):
+        return await handler(
+            request.override(system_message=request.state["system_msg"])
+        )

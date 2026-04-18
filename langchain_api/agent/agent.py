@@ -1,20 +1,18 @@
-import os
 import sys
 from typing import Any
 
 from deepagents import create_deep_agent
 from deepagents.backends.store import BackendContext
 from langchain.agents import create_agent
-from langchain.agents.middleware import AgentMiddleware, HumanInTheLoopMiddleware
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph.state import CompiledStateGraph
 from loguru import logger
 
 from langchain_api.agent.context import AgentContext
-from langchain_api.agent.state import StateSchema
 from langchain_api.constant import home_path, workspace_path
 from langchain_api.settings import settings
 from langchain_api.utils import get_chat_model, get_current_time
+from langchain_api.middleware.common import BusinessMiddleware
 
 checkpointer = InMemorySaver()  # 短期记忆
 if settings.PG_DATABASE_URL:
@@ -41,40 +39,6 @@ else:
     DEFUALT_SYSTEM_PROMPT = f"你的运行环境未知: {platform}"
 
 skills = ["/workspace/skills"]
-
-
-# https://github.com/CopilotKit/CopilotKit/issues/2646
-class BusinessMiddleware(AgentMiddleware[None, AgentContext, None]):
-    """业务中间件，用于处理业务相关的逻辑"""
-
-    state_schema = StateSchema
-
-    def wrap_model_call(self, request, handler):
-        context: AgentContext = request.runtime.context
-        internet_search = context.internet_search
-        deep_thinking = context.deep_thinking
-        if not internet_search:
-            # 禁用互联网搜索相关的工具调用
-            filtered_tools = [
-                tool for tool in request.tools if tool.name != "tavily_search"
-            ]
-            request = request.override(tools=filtered_tools)
-
-        # 处理深度思考
-        if deep_thinking:
-            # 为模型调用添加深度思考参数
-            if hasattr(request, "model_settings"):
-                model_settings = request.model_settings.copy()
-            else:
-                model_settings = {}
-            model_settings["extra_body"] = model_settings.get("extra_body", {})
-            model_settings["extra_body"]["enable_thinking"] = True
-            request = request.override(model_settings=model_settings)
-
-        return handler(request)
-
-    async def awrap_model_call(self, request, handler):
-        return await self.wrap_model_call(request, handler)
 
 
 def user_namespace_factory(ctx: BackendContext[Any, AgentContext]) -> tuple[str, ...]:
@@ -119,12 +83,6 @@ class Agent:
 
         backend = None
         tools.extend([get_weather, web_fetch])
-
-        if os.getenv("TAVILY_API_KEY"):
-            logger.info("TAVILY_API_KEY 已配置，将添加 TavilySearch 工具")
-            from langchain_tavily.tavily_search import TavilySearch
-
-            tools.append(TavilySearch())
 
         if not workspace_path.exists():
             workspace_path.mkdir(parents=True, exist_ok=True)

@@ -22,9 +22,9 @@ class Settings(BaseSettings):
     EMBEDDING_MODEL_NAME: str
 
     # elasticsearch配置
-    ES_URL: str
-    ES_URSR: str
-    ES_PWD: str
+    ES_URL: str | None = None
+    ES_URSR: str | None = None
+    ES_PWD: str | None = None
 
     # Tavily API Key 配置
     TAVILY_API_KEY: str | None = None
