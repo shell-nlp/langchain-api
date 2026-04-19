@@ -1,13 +1,14 @@
 import asyncio
+from collections import defaultdict
 from datetime import datetime
-from typing import List, Literal, NotRequired, TypedDict
+from typing import Dict, List, Literal, NotRequired, TypedDict
 from zoneinfo import ZoneInfo
 
 from langchain.agents import AgentState
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.documents import Document
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
+from langchain_core.messages import BaseMessage, SystemMessage
 from langchain_core.vectorstores import VectorStore
 from langchain_deepseek import ChatDeepSeek
 from langgraph.runtime import Runtime
@@ -151,6 +152,44 @@ def messages2str(messages: List[BaseMessage]):
         msg_str = f"{msg.type}: " + msg.content
         msg_str_list.append(msg_str)
     return "\n".join(msg_str_list)
+
+
+def _doc_unique_id(doc: Document) -> str:
+    """
+    定义文档唯一ID：
+    优先用 metadata['id']，否则用 page_content
+    """
+    if doc.metadata and "id" in doc.metadata:
+        return str(doc.metadata["id"])
+    return doc.page_content
+
+
+# 实现倒数排名融合RRF算法
+def rrf_fusion(
+    rank_lists: List[List[Document]], weights: List[float] = [0.5, 0.5], k: int = 60
+) -> List[Document]:
+    """
+    RRF 融合多个 Document 排序结果
+
+    :param rank_lists: 多个召回结果，每个是按相关性排序的 Document 列表
+    :param k: 平滑参数（默认60）
+    :return: 融合后的 Document 排序列表
+    """
+
+    scores: Dict[str, float] = defaultdict(float)
+    doc_map: Dict[str, Document] = {}
+    for weight, rank_list in zip(weights, rank_lists):
+        for rank, doc in enumerate(rank_list, start=1):
+            doc_id = _doc_unique_id(doc)
+            # 累加 RRF 分数
+            scores[doc_id] += weight / (k + rank)
+            # 保存一个代表文档（用于最终返回）
+            if doc_id not in doc_map:
+                doc_map[doc_id] = doc
+    # 排序
+    sorted_docs = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    # 返回 Document
+    return [doc_map[doc_id] for doc_id, _ in sorted_docs]
 
 
 shanghai_tz = ZoneInfo("Asia/Shanghai")  # 设置亚洲/上海时区
