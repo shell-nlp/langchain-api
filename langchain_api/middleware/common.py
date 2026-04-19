@@ -33,16 +33,20 @@ class BusinessMiddleware(AgentMiddleware[None, AgentContext, None]):
             request = request.override(tools=filtered_tools)
 
         # 处理深度思考
+        if hasattr(request, "model_settings"):
+            model_settings = request.model_settings.copy()
+        else:
+            model_settings = {}
         if deep_thinking:
             # 为模型调用添加深度思考参数
-            if hasattr(request, "model_settings"):
-                model_settings = request.model_settings.copy()
-            else:
-                model_settings = {}
             model_settings["extra_body"] = model_settings.get("extra_body", {})
             model_settings["extra_body"]["enable_thinking"] = True
             request = request.override(model_settings=model_settings)
-
+        else:
+            # 移除深度思考参数
+            model_settings["extra_body"] = model_settings.get("extra_body", {})
+            model_settings["extra_body"]["enable_thinking"] = False
+            request = request.override(model_settings=model_settings)
         return handler(request)
 
     async def awrap_model_call(self, request, handler):
