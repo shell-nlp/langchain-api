@@ -3,8 +3,6 @@ from typing import Any, Dict, List, Optional
 from elasticsearch import Elasticsearch as ESClient
 from loguru import logger
 
-from langchain_api.utils import get_embedding_model
-
 
 class Elasticsearch:
     def __init__(
@@ -23,6 +21,8 @@ class Elasticsearch:
     @property
     def embedding_model(self):
         if self._embedding_model is None:
+            from langchain_api.utils import get_embedding_model
+
             self._embedding_model = get_embedding_model()
         return self._embedding_model
 

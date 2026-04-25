@@ -9,12 +9,12 @@ interface Message {
   role: 'user' | 'ai'
   content: string
   reasoningContent?: string
-  isToolCall?: boolean
-  toolData?: ToolData
+  toolData?: ToolData[]
 }
 
 interface ToolData {
-  toolCall?: {
+  toolCall: {
+    id: string
     name: string
     args: Record<string, unknown>
   }
@@ -25,7 +25,7 @@ interface ToolData {
 }
 
 interface StreamEvent {
-  event: string
+  event: 'token' | 'tool_calls' | 'tool_output' | '__interrupt__'
   data: {
     id?: string
     token?: string
@@ -37,7 +37,7 @@ interface StreamEvent {
     }>
     tool_output?: Array<{
       tool_call_id: string
-      content: string
+      content: unknown
     }>
     __interrupt__?: {
       action_requests: Array<{
@@ -49,9 +49,21 @@ interface StreamEvent {
   }
 }
 
-const API_BASE_URL = typeof window !== 'undefined' 
-  ? (window.location.origin.includes('localhost') ? 'http://localhost:7869' : window.location.origin)
-  : ''
+const DEFAULT_BACKEND_URL = 'http://localhost:7869'
+
+function getApiBaseUrl(): string {
+  const envUrl = process.env.NEXT_PUBLIC_API_BASE_URL
+  if (envUrl) return envUrl.replace(/\/$/, '')
+
+  if (typeof window === 'undefined') return ''
+
+  const { hostname, origin } = window.location
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return DEFAULT_BACKEND_URL
+  }
+
+  return origin
+}
 
 function generateSessionId(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
@@ -85,15 +97,7 @@ function getToolIcon(toolName: string): string {
 export default function ChatInterface() {
   const [messages, setMessages] = useState<Message[]>([])
   const [inputValue, setInputValue] = useState('')
-  const [sessionId, setSessionId] = useState(() => {
-    // 在服务器端返回空字符串，在客户端生成新的会话ID
-    if (typeof window !== 'undefined') {
-      const newId = generateSessionId()
-      localStorage.setItem('chat_session_id', newId)
-      return newId
-    }
-    return ''
-  })
+  const [sessionId, setSessionId] = useState('')
   const [status, setStatus] = useState<'ready' | 'connecting' | 'error'>('ready')
   const [isProcessing, setIsProcessing] = useState(false)
   const [internetSearch, setInternetSearch] = useState(false)
@@ -104,16 +108,21 @@ export default function ChatInterface() {
   const chatContainerRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
-  const messageIdMapRef = useRef<Map<string, string>>(new Map())
-  const contentAccumulatorRef = useRef<Map<string, string>>(new Map())
-  const reasoningAccumulatorRef = useRef<Map<string, string>>(new Map())
-  const pendingToolCallsRef = useRef<Map<string, { tool_calls: StreamEvent['data']['tool_calls'], messageId: string }>>(new Map())
+  const currentAssistantMessageIdRef = useRef<string | null>(null)
   const processedToolCallIdsRef = useRef<Set<string>>(new Set())
-  const lastToolMessageIdRef = useRef<string | null>(null)
 
   const scrollToBottom = useCallback(() => {
     if (chatContainerRef.current) {
       chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight
+    }
+  }, [])
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const existingId = localStorage.getItem('chat_session_id')
+      const nextId = existingId || generateSessionId()
+      localStorage.setItem('chat_session_id', nextId)
+      setSessionId(nextId)
     }
   }, [])
 
@@ -148,17 +157,22 @@ export default function ChatInterface() {
     })
   }, [])
 
-  const updateMessageContent = useCallback((messageId: string, content: string, isReasoning = false) => {
-    setMessages(prev => prev.map(msg => {
-      if (msg.id === messageId) {
-        if (isReasoning) {
-          return { ...msg, reasoningContent: content }
-        }
-        return { ...msg, content }
-      }
-      return msg
-    }))
-  }, [])
+  const ensureAssistantMessage = useCallback(() => {
+    let assistantMessageId = currentAssistantMessageIdRef.current
+    if (!assistantMessageId) {
+      assistantMessageId = generateMessageId()
+      currentAssistantMessageIdRef.current = assistantMessageId
+      addMessage({ id: assistantMessageId, role: 'ai', content: '', toolData: [] })
+    }
+    return assistantMessageId
+  }, [addMessage])
+
+  const updateAssistantMessage = useCallback((updater: (message: Message) => Message) => {
+    const assistantMessageId = ensureAssistantMessage()
+    setMessages(prev => prev.map(msg => (
+      msg.id === assistantMessageId ? updater(msg) : msg
+    )))
+  }, [ensureAssistantMessage])
 
   const escapeHtml = (text: string): string => {
     const div = document.createElement('div')
@@ -174,146 +188,98 @@ export default function ChatInterface() {
     }
   }
 
+  const stringifyToolContent = (content: unknown): string => {
+    if (typeof content === 'string') return content
+    if (content == null) return ''
+    try {
+      return JSON.stringify(content, null, 2)
+    } catch {
+      return String(content)
+    }
+  }
+
   const handleStreamEvent = useCallback((event: StreamEvent) => {
     const data = event.data
     if (!data) return
 
     switch (event.event) {
       case 'token': {
-        const messageId = data.id || ''
-        
-        // 检查是否已经存在该消息
-        const existingMessage = messageIdMapRef.current.has(messageId)
-        
-        // 检查是否存在相关的工具调用消息
-        let relatedToolMessageId: string | null = null
-        if (lastToolMessageIdRef.current) {
-          // 使用存储的最后一个工具消息ID
-          relatedToolMessageId = lastToolMessageIdRef.current
-        }
-        
         if (data.reasoning_token) {
-          const current = reasoningAccumulatorRef.current.get(messageId) || ''
-          const updated = current + data.reasoning_token
-          reasoningAccumulatorRef.current.set(messageId, updated)
-          
-          if (existingMessage) {
-            updateMessageContent(messageId, updated, true)
-          } else {
-            // 只创建一个消息，包含思考内容
-            const newMsg: Message = {
-              id: messageId,
-              role: 'ai',
-              content: data.token || '',
-              reasoningContent: updated
-            }
-            addMessage(newMsg)
-            messageIdMapRef.current.set(messageId, messageId)
-          }
+          updateAssistantMessage(msg => ({
+            ...msg,
+            reasoningContent: `${msg.reasoningContent || ''}${data.reasoning_token}`
+          }))
         }
-        
+
         if (data.token) {
-          // 检查是否有相关的工具调用消息
-          if (lastToolMessageIdRef.current) {
-            // 累积工具消息的内容
-            const current = contentAccumulatorRef.current.get(lastToolMessageIdRef.current) || ''
-            const updated = current + data.token
-            contentAccumulatorRef.current.set(lastToolMessageIdRef.current, updated)
-            // 更新工具调用消息的内容
-            updateMessageContent(lastToolMessageIdRef.current, updated, false)
-          } else {
-            const current = contentAccumulatorRef.current.get(messageId) || ''
-            const updated = current + data.token
-            contentAccumulatorRef.current.set(messageId, updated)
-            
-            if (existingMessage) {
-              updateMessageContent(messageId, updated, false)
-            } else if (!data.reasoning_token) {
-              // 只有在没有思考内容和工具调用时才创建新消息
-              const newMsg: Message = {
-                id: messageId,
-                role: 'ai',
-                content: updated
-              }
-              addMessage(newMsg)
-              messageIdMapRef.current.set(messageId, messageId)
-            }
-          }
+          updateAssistantMessage(msg => ({
+            ...msg,
+            content: `${msg.content}${data.token}`
+          }))
         }
         break
       }
-      
+
       case 'tool_calls': {
-        if (data.tool_calls) {
-          const msgId = data.id || ''
-          
-          // 移除临时消息（但保留思考内容用于后续显示）
-          if (messageIdMapRef.current.has(msgId)) {
-            messageIdMapRef.current.delete(msgId)
-            contentAccumulatorRef.current.delete(msgId)
-            // 从messages状态中删除该消息，避免重复显示
-            setMessages(prev => prev.filter(m => m.id !== msgId))
-          }
-          
-          // 暂存工具调用信息，关联到原始 msgId
-          pendingToolCallsRef.current.set(msgId, {
-            tool_calls: data.tool_calls,
-            messageId: msgId
+        if (data.tool_calls?.length) {
+          updateAssistantMessage(msg => {
+            const tools = [...(msg.toolData || [])]
+            for (const toolCall of data.tool_calls || []) {
+              if (!tools.some(tool => tool.toolCall.id === toolCall.id)) {
+                tools.push({ toolCall, toolOutput: [] })
+              }
+            }
+            return { ...msg, toolData: tools }
           })
         }
         break
       }
-      
+
       case 'tool_output': {
-        if (data.tool_output) {
-          for (const output of data.tool_output) {
-            if (processedToolCallIdsRef.current.has(output.tool_call_id)) {
-              continue
-            }
-            processedToolCallIdsRef.current.add(output.tool_call_id)
-            
-            let matchedCall: { id: string; name: string; args: Record<string, unknown> } | null = null
-            let matchedMsgId: string | null = null
-            
-            for (const [msgId, pendingData] of pendingToolCallsRef.current) {
-              const match = pendingData.tool_calls?.find(call => call.id === output.tool_call_id)
-              if (match) {
-                matchedCall = match
-                matchedMsgId = msgId
-                break
+        if (data.tool_output?.length) {
+          updateAssistantMessage(msg => {
+            let tools = [...(msg.toolData || [])]
+
+            for (const output of data.tool_output || []) {
+              if (processedToolCallIdsRef.current.has(output.tool_call_id)) {
+                continue
+              }
+              processedToolCallIdsRef.current.add(output.tool_call_id)
+
+              const normalizedOutput = {
+                ...output,
+                content: stringifyToolContent(output.content)
+              }
+              const existingToolIndex = tools.findIndex(tool => tool.toolCall.id === output.tool_call_id)
+
+              if (existingToolIndex >= 0) {
+                const existingTool = tools[existingToolIndex]
+                tools = tools.map((tool, index) => (
+                  index === existingToolIndex
+                    ? {
+                        ...existingTool,
+                        toolOutput: [...(existingTool.toolOutput || []), normalizedOutput]
+                      }
+                    : tool
+                ))
+              } else {
+                tools.push({
+                  toolCall: {
+                    id: output.tool_call_id,
+                    name: 'tool',
+                    args: {}
+                  },
+                  toolOutput: [normalizedOutput]
+                })
               }
             }
-            
-            if (matchedCall && matchedMsgId) {
-              pendingToolCallsRef.current.delete(matchedMsgId)
-              
-              const reasoningContent = reasoningAccumulatorRef.current.get(matchedMsgId)
-              reasoningAccumulatorRef.current.delete(matchedMsgId)
-              
-              // 生成唯一的工具消息ID
-              const toolMsgId = `tool_${matchedMsgId || 'unknown'}_${output.tool_call_id}`
-              
-              const toolMsg: Message = {
-                id: toolMsgId,
-                role: 'ai',
-                content: '',
-                reasoningContent: reasoningContent || undefined,
-                isToolCall: true,
-                toolData: {
-                  toolCall: matchedCall,
-                  toolOutput: [output]
-                }
-              }
-              addMessage(toolMsg)
-              
-              // 存储最后一个工具消息ID
-              lastToolMessageIdRef.current = toolMsgId
-            }
-          }
+
+            return { ...msg, toolData: tools }
+          })
         }
         break
       }
-      
+
       case '__interrupt__': {
         if (data.__interrupt__) {
           setInterruptData(data.__interrupt__)
@@ -324,11 +290,53 @@ export default function ChatInterface() {
         break
       }
     }
-  }, [addMessage, updateMessageContent])
+  }, [updateAssistantMessage])
+
+  const readEventStream = useCallback(async (response: Response) => {
+    const reader = response.body?.getReader()
+    if (!reader) throw new Error('No response body')
+
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    const processChunk = (chunk: string) => {
+      const normalized = chunk.replace(/\r\n/g, '\n')
+      const parts = normalized.split('\n\n')
+      buffer = parts.pop() || ''
+
+      for (const part of parts) {
+        const dataLines = part
+          .split('\n')
+          .map(line => line.trim())
+          .filter(line => line.startsWith('data:'))
+          .map(line => line.slice(5).trim())
+
+        if (dataLines.length === 0) continue
+
+        try {
+          handleStreamEvent(JSON.parse(dataLines.join('\n')) as StreamEvent)
+        } catch (error) {
+          console.error('Parse error:', error, dataLines.join('\n'))
+        }
+      }
+    }
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      processChunk(buffer)
+    }
+
+    buffer += decoder.decode()
+    if (buffer.trim()) {
+      processChunk(`${buffer}\n\n`)
+    }
+  }, [handleStreamEvent])
 
   const sendMessage = async () => {
     const query = inputValue.trim()
-    if (!query || isProcessing) return
+    if (!query || isProcessing || !sessionId) return
 
     const userMsg: Message = {
       id: generateMessageId(),
@@ -344,10 +352,12 @@ export default function ChatInterface() {
     
     setIsProcessing(true)
     setStatus('connecting')
-    
-    // 重置工具消息ID
-    lastToolMessageIdRef.current = null
-    
+
+    const assistantMessageId = generateMessageId()
+    currentAssistantMessageIdRef.current = assistantMessageId
+    processedToolCallIdsRef.current.clear()
+    addMessage({ id: assistantMessageId, role: 'ai', content: '', toolData: [] })
+
     abortControllerRef.current = new AbortController()
 
     const requestData = {
@@ -358,7 +368,7 @@ export default function ChatInterface() {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/general_api`, {
+      const response = await fetch(`${getApiBaseUrl()}/api/general_api`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -370,32 +380,7 @@ export default function ChatInterface() {
 
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
 
-      const reader = response.body?.getReader()
-      if (!reader) throw new Error('No reader')
-
-      const decoder = new TextDecoder()
-      let buffer = ''
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n\n')
-        buffer = lines.pop() || ''
-
-        for (const line of lines) {
-          if (line.trim().startsWith('data:')) {
-            const jsonStr = line.trim().slice(5).trim()
-            try {
-              const event = JSON.parse(jsonStr) as StreamEvent
-              handleStreamEvent(event)
-            } catch (e) {
-              console.error('Parse error:', e)
-            }
-          }
-        }
-      }
+      await readEventStream(response)
     } catch (error: unknown) {
       if (error instanceof Error && error.name !== 'AbortError') {
         console.error('Request failed:', error)
@@ -408,10 +393,7 @@ export default function ChatInterface() {
     } finally {
       setIsProcessing(false)
       setStatus('ready')
-      messageIdMapRef.current.clear()
-      contentAccumulatorRef.current.clear()
-      reasoningAccumulatorRef.current.clear()
-      pendingToolCallsRef.current.clear()
+      currentAssistantMessageIdRef.current = null
       processedToolCallIdsRef.current.clear()
     }
   }
@@ -425,6 +407,8 @@ export default function ChatInterface() {
 
   const clearChat = () => {
     setMessages([])
+    currentAssistantMessageIdRef.current = null
+    processedToolCallIdsRef.current.clear()
     const newId = generateSessionId()
     localStorage.setItem('chat_session_id', newId)
     setSessionId(newId)
@@ -458,7 +442,7 @@ export default function ChatInterface() {
     abortControllerRef.current = new AbortController()
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/general_api`, {
+      const response = await fetch(`${getApiBaseUrl()}/api/general_api`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -470,32 +454,7 @@ export default function ChatInterface() {
 
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
 
-      const reader = response.body?.getReader()
-      if (!reader) throw new Error('No reader')
-
-      const decoder = new TextDecoder()
-      let buffer = ''
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n\n')
-        buffer = lines.pop() || ''
-
-        for (const line of lines) {
-          if (line.trim().startsWith('data:')) {
-            const jsonStr = line.trim().slice(5).trim()
-            try {
-              const event = JSON.parse(jsonStr) as StreamEvent
-              handleStreamEvent(event)
-            } catch (e) {
-              console.error('Parse error:', e)
-            }
-          }
-        }
-      }
+      await readEventStream(response)
     } catch (error: unknown) {
       if (error instanceof Error && error.name !== 'AbortError') {
         console.error('Request failed:', error)
@@ -509,10 +468,6 @@ export default function ChatInterface() {
       setIsProcessing(false)
       setStatus('ready')
       setInterruptData(null)
-      messageIdMapRef.current.clear()
-      contentAccumulatorRef.current.clear()
-      reasoningAccumulatorRef.current.clear()
-      pendingToolCallsRef.current.clear()
       processedToolCallIdsRef.current.clear()
     }
   }
@@ -639,70 +594,45 @@ export default function ChatInterface() {
                         <circle cx="12" cy="7" r="4"/>
                       </svg>
                     </div>
-                    <span className={styles.author}>用户</span>
+                    <span className={styles.author}>{"\u7528\u6237"}</span>
                     <span className={styles.time}>{new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span>
                   </div>
                   <div className={styles.messageContent} dangerouslySetInnerHTML={{ __html: parseMarkdown(msg.content) }} />
                 </>
               ) : (
                 <>
-                  {msg.isToolCall && msg.toolData ? (
-                    <>
-                      <div className={styles.messageHeader}>
-                        <div className={`${styles.avatar} ${styles.ai}`}>
-                          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M12 2a2 2 0 012 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 017 7h1a1 1 0 011 1v3a1 1 0 01-1 1h-1v1a2 2 0 01-2 2H5a2 2 0 01-2-2v-1H2a1 1 0 01-1-1v-3a1 1 0 011-1h1a7 7 0 017-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 012-2M7.5 13a1.5 1.5 0 100 3 1.5 1.5 0 000-3m9 0a1.5 1.5 0 100 3 1.5 1.5 0 000-3"/>
-                          </svg>
-                        </div>
-                        <span className={styles.author}>AI 助手</span>
-                        <span className={styles.time}>{new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span>
+                  <div className={styles.messageHeader}>
+                    <div className={`${styles.avatar} ${styles.ai}`}>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 2a2 2 0 012 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 017 7h1a1 1 0 011 1v3a1 1 0 01-1 1h-1v1a2 2 0 01-2 2H5a2 2 0 01-2-2v-1H2a1 1 0 01-1-1v-3a1 1 0 011-1h1a7 7 0 017-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 012-2M7.5 13a1.5 1.5 0 100 3 1.5 1.5 0 000-3m9 0a1.5 1.5 0 100 3 1.5 1.5 0 000-3"/>
+                      </svg>
+                    </div>
+                    <span className={styles.author}>{"AI \u52a9\u624b"}</span>
+                    <span className={styles.time}>{new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span>
+                  </div>
+                  {msg.reasoningContent && (
+                    <div className={styles.reasoningContainer}>
+                      <div className={styles.reasoningHeader}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <circle cx="12" cy="12" r="10"/>
+                          <path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/>
+                          <line x1="12" y1="17" x2="12.01" y2="17"/>
+                        </svg>
+                        <span>{"\u6df1\u5ea6\u601d\u8003"}</span>
                       </div>
-                      {msg.reasoningContent && (
-                        <div className={styles.reasoningContainer}>
-                          <div className={styles.reasoningHeader}>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <circle cx="12" cy="12" r="10"/>
-                              <path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/>
-                              <line x1="12" y1="17" x2="12.01" y2="17"/>
-                            </svg>
-                            <span>深度思考</span>
-                          </div>
-                          <div className={styles.reasoningContent} dangerouslySetInnerHTML={{ __html: parseMarkdown(msg.reasoningContent) }} />
-                        </div>
-                      )}
-                      <ToolCard toolData={msg.toolData} />
-                      {msg.content && (
-                        <div className={styles.messageContent} dangerouslySetInnerHTML={{ __html: parseMarkdown(msg.content) }} />
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      <div className={styles.messageHeader}>
-                        <div className={`${styles.avatar} ${styles.ai}`}>
-                          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M12 2a2 2 0 012 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 017 7h1a1 1 0 011 1v3a1 1 0 01-1 1h-1v1a2 2 0 01-2 2H5a2 2 0 01-2-2v-1H2a1 1 0 01-1-1v-3a1 1 0 011-1h1a7 7 0 017-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 012-2M7.5 13a1.5 1.5 0 100 3 1.5 1.5 0 000-3m9 0a1.5 1.5 0 100 3 1.5 1.5 0 000-3"/>
-                          </svg>
-                        </div>
-                        <span className={styles.author}>AI 助手</span>
-                        <span className={styles.time}>{new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span>
-                      </div>
-                      {msg.reasoningContent && (
-                        <div className={styles.reasoningContainer}>
-                          <div className={styles.reasoningHeader}>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <circle cx="12" cy="12" r="10"/>
-                              <path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/>
-                              <line x1="12" y1="17" x2="12.01" y2="17"/>
-                            </svg>
-                            <span>深度思考</span>
-                          </div>
-                          <div className={styles.reasoningContent} dangerouslySetInnerHTML={{ __html: parseMarkdown(msg.reasoningContent) }} />
-                        </div>
-                      )}
-                      {msg.content && (
-                        <div className={styles.messageContent} dangerouslySetInnerHTML={{ __html: parseMarkdown(msg.content) }} />
-                      )}
-                    </>
+                      <div className={styles.reasoningContent} dangerouslySetInnerHTML={{ __html: parseMarkdown(msg.reasoningContent) }} />
+                    </div>
+                  )}
+                  {msg.toolData?.map(toolData => (
+                    <ToolCard key={toolData.toolCall.id} toolData={toolData} />
+                  ))}
+                  {msg.content && (
+                    <div className={styles.messageContent} dangerouslySetInnerHTML={{ __html: parseMarkdown(msg.content) }} />
+                  )}
+                  {isProcessing && msg.id === currentAssistantMessageIdRef.current && !msg.content && !msg.reasoningContent && !msg.toolData?.length && (
+                    <div className={styles.typingIndicator}>
+                      <span /><span /><span />
+                    </div>
                   )}
                 </>
               )}
