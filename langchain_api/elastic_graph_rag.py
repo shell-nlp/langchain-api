@@ -110,6 +110,62 @@ class ElasticGraphRAG:
             return_debug=return_debug,
         )
 
+    def delete_graph(self, ignore_missing: bool = True) -> Dict[str, Any]:
+        """删除当前 graph_name 对应的 passage/entity/relation 三个索引。"""
+        deleted = {}
+        for kind, index_name in self.indexes.items():
+            if not self.es.es_client.indices.exists(index=index_name):
+                deleted[kind] = "missing"
+                if not ignore_missing:
+                    raise ValueError(f"index not found: {index_name}")
+                continue
+
+            self.es.es_client.indices.delete(index=index_name)
+            deleted[kind] = "deleted"
+
+        return {"graph_name": self.graph_name, "indexes": self.indexes, "result": deleted}
+
+    def delete_documents(self, doc_ids: List[str]) -> Dict[str, Any]:
+        """
+        按 passage/document id 删除文档及其孤立的实体、关系。
+
+        注意：如果某个 entity/relation 仍被其他 passage 引用，会保留并移除已删 passage_id。
+        """
+        doc_ids = [str(doc_id) for doc_id in doc_ids if doc_id]
+        if not doc_ids:
+            return {"deleted_passages": 0, "deleted_relations": 0, "deleted_entities": 0}
+
+        relations = self._search_by_terms(
+            self.indexes["relation"], "metadata.passage_ids", doc_ids, size=10000
+        )
+        entities = self._search_by_terms(
+            self.indexes["entity"], "metadata.passage_ids", doc_ids, size=10000
+        )
+
+        deleted_passages = self._delete_ids(self.indexes["passage"], doc_ids)
+        deleted_relations, kept_relation_ids = self._delete_or_detach_by_passage_ids(
+            index_name=self.indexes["relation"], docs=relations, deleted_passage_ids=doc_ids
+        )
+        deleted_entities, _ = self._delete_or_detach_by_passage_ids(
+            index_name=self.indexes["entity"], docs=entities, deleted_passage_ids=doc_ids
+        )
+
+        if deleted_relations:
+            self._detach_relation_ids_from_entities(deleted_relations)
+
+        return {
+            "deleted_passages": deleted_passages,
+            "deleted_relations": len(deleted_relations),
+            "deleted_entities": len(deleted_entities),
+            "detached_relations": len(kept_relation_ids),
+        }
+
+    def delete_by_query(self, query: str) -> Dict[str, Any]:
+        """先检索 passage，再按召回到的 passage id 删除。"""
+        result = self.retrieve(query=query, k=100, return_debug=False)
+        doc_ids = [str(doc.get("metadata", {}).get("id") or doc.get("id")) for doc in result]
+        return self.delete_documents(doc_ids)
+
     def build_graph(
         self, documents: List[Document], extract_triplets: bool = True
     ) -> Dict[str, List[Dict[str, Any]]]:
@@ -324,6 +380,90 @@ class ElasticGraphRAG:
             self.chat_model = get_chat_model()
         return self.chat_model
 
+    def _search_by_terms(
+        self, index_name: str, field: str, values: List[str], size: int
+    ) -> List[Dict[str, Any]]:
+        if not values or not self.es.es_client.indices.exists(index=index_name):
+            return []
+        results = self.es.es_client.search(
+            index=index_name,
+            body={"query": {"terms": {field: values}}},
+            size=size,
+        )
+        docs = []
+        for hit in results["hits"]["hits"]:
+            source = hit.get("_source", {})
+            docs.append(
+                {
+                    "id": hit["_id"],
+                    "content": source.get("content", ""),
+                    "metadata": source.get("metadata", {}),
+                }
+            )
+        return docs
+
+    def _delete_ids(self, index_name: str, doc_ids: List[str]) -> int:
+        if not doc_ids or not self.es.es_client.indices.exists(index=index_name):
+            return 0
+        operations = [{"delete": {"_index": index_name, "_id": doc_id}} for doc_id in doc_ids]
+        result = self.es.es_client.bulk(operations=operations, refresh=True)
+        return sum(
+            1
+            for item in result.get("items", [])
+            if item.get("delete", {}).get("result") == "deleted"
+        )
+
+    def _delete_or_detach_by_passage_ids(
+        self,
+        index_name: str,
+        docs: List[Dict[str, Any]],
+        deleted_passage_ids: List[str],
+    ) -> Tuple[List[str], List[str]]:
+        deleted_ids = []
+        kept_ids = []
+        deleted_passage_set = set(deleted_passage_ids)
+
+        for doc in docs:
+            metadata = dict(doc.get("metadata", {}))
+            remaining_passage_ids = [
+                passage_id
+                for passage_id in metadata.get("passage_ids", [])
+                if passage_id not in deleted_passage_set
+            ]
+            if remaining_passage_ids:
+                metadata["passage_ids"] = remaining_passage_ids
+                self.es.es_client.update(
+                    index=index_name,
+                    id=doc["id"],
+                    doc={"metadata": metadata},
+                    refresh=True,
+                )
+                kept_ids.append(doc["id"])
+            else:
+                self._delete_ids(index_name, [doc["id"]])
+                deleted_ids.append(doc["id"])
+
+        return deleted_ids, kept_ids
+
+    def _detach_relation_ids_from_entities(self, relation_ids: List[str]) -> None:
+        entities = self._search_by_terms(
+            self.indexes["entity"], "metadata.relation_ids", relation_ids, size=10000
+        )
+        relation_id_set = set(relation_ids)
+        for entity in entities:
+            metadata = dict(entity.get("metadata", {}))
+            metadata["relation_ids"] = [
+                relation_id
+                for relation_id in metadata.get("relation_ids", [])
+                if relation_id not in relation_id_set
+            ]
+            self.es.es_client.update(
+                index=self.indexes["entity"],
+                id=entity["id"],
+                doc={"metadata": metadata},
+                refresh=True,
+            )
+
     @classmethod
     def _parse_triplets(cls, raw_triplets: Any) -> List[Tuple[str, str, str]]:
         triplets = []
@@ -421,20 +561,26 @@ if __name__ == "__main__":
         ),
     ]
 
-    print("\n1) 写入 ES 向量图索引")
-    pprint(rag.add_documents(documents, extract_triplets=False))
+    # print("\n1) 写入 ES 向量图索引")
+    # pprint(rag.add_documents(documents, extract_triplets=True))
 
-    print("\n2) 执行向量图 RAG 检索")
-    result = rag.retrieve(
-        query="谁提出了相对论？",
-        k=3,
-        entity_top_k=3,
-        relation_top_k=3,
-        expansion_degree=1,
-        return_debug=True,
-    )
-    pprint(result)
+    # print("\n2) 执行向量图 RAG 检索")
+    # result = rag.retrieve(
+    #     query="谁提出了相对论？",
+    #     k=3,
+    #     entity_top_k=3,
+    #     relation_top_k=3,
+    #     expansion_degree=1,
+    #     return_debug=True,
+    # )
+    # pprint(result)
 
-    print("\n3) 只打印召回上下文")
-    for index, passage in enumerate(result["passages"], start=1):
-        print(f"文档 {index}: {passage['content']}")
+    # print("\n3) 只打印召回上下文")
+    # for index, passage in enumerate(result["passages"], start=1):
+    #     print(f"文档 {index}: {passage['content']}")
+
+    # 删除单个文档及其孤立实体/关系：
+    # pprint(rag.delete_documents(["doc_002"]))
+
+    # 删除整个 demo graph 的三个索引：
+    # pprint(rag.delete_graph())
