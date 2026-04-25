@@ -6,6 +6,8 @@ from langchain_elasticsearch import (
 )
 
 from langchain_api.settings import settings
+from langchain_api.elastic_graph_rag import ElasticGraphRAG
+from langchain_api.elastic_utils import Elasticsearch
 from langchain_api.utils import get_embedding_model
 
 embeddings = get_embedding_model()
@@ -39,6 +41,25 @@ def retrieve_context(query: str):
 
 
 retrieve_tool = retrieve_context
+
+
+@tool
+def retrieve_graph_context(query: str, graph_name: str = "236"):
+    """使用 ES 向量图 RAG 检索与查询相关的上下文。"""
+    es = Elasticsearch(
+        url=settings.ES_URL,
+        username=settings.ES_URSR,
+        password=settings.ES_PWD,
+        embedding_model=embeddings,
+    )
+    rag = ElasticGraphRAG(es=es, graph_name=graph_name)
+    result = rag.retrieve(query=query, k=5)
+    passages = result["passages"] if isinstance(result, dict) else result
+
+    context = ""
+    for idx, doc in enumerate(passages, start=1):
+        context += f"文档 {idx}: \n{doc.get('content', '')}\n\n"
+    return context
 
 if __name__ == "__main__":
     query = "等节水灌溉方式。\n水资源短缺地区应当严格控制人造河湖等景观用水"
