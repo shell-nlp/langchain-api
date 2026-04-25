@@ -19,14 +19,14 @@ TRIPLET_PROMPT = """从文本中抽取知识图谱三元组。
 - subject/object 使用简洁实体名。
 - predicate 使用简短中文或英文关系短语。
 - 最多返回 20 个三元组。
-- 只返回 JSON，格式：{"triplets":[{"subject":"...","predicate":"...","object":"..."}]}
+- 只返回 JSON，格式：{{"triplets":[{{"subject":"...","predicate":"...","object":"..."}}]}}
 
 文本：
 {text}
 """
 
 QUERY_ENTITY_PROMPT = """从问题中抽取检索知识图谱需要的实体名。
-只返回 JSON：{"entities":["..."]}
+只返回 JSON：{{"entities":["..."]}}
 
 问题：
 {query}
@@ -36,12 +36,7 @@ QUERY_ENTITY_PROMPT = """从问题中抽取检索知识图谱需要的实体名�
 class ElasticGraphRAG:
     """基于 Elasticsearch 的轻量 Vector Graph RAG。"""
 
-    def __init__(
-        self,
-        es: Optional[Elasticsearch],
-        graph_name: str,
-        chat_model=None,
-    ):
+    def __init__(self, es: Elasticsearch, graph_name: str, chat_model=None):
         self.es = es
         self.graph_name = graph_name
         self.chat_model = chat_model
@@ -67,26 +62,17 @@ class ElasticGraphRAG:
             metadata = metadatas[index] if metadatas and index < len(metadatas) else {}
             doc_id = ids[index] if ids and index < len(ids) else str(uuid.uuid4())
             documents.append(Document(page_content=text, metadata=metadata, id=doc_id))
-
         return self.add_documents(documents, extract_triplets=extract_triplets)
 
     def add_documents(
-        self,
-        documents: List[Document],
-        extract_triplets: bool = True,
+        self, documents: List[Document], extract_triplets: bool = True
     ) -> Dict[str, Any]:
-        """
-        把普通文档转成 ES 向量图 RAG 需要的三类索引。
-
-        推荐输入：
-        - 普通 Document：自动用 LLM 抽取 triplets。
-        - 预抽取 Document：metadata["triplets"] = [[subject, predicate, object], ...]
-        """
+        """把 Document 转成 passage/entity/relation 三类 ES 向量索引。"""
         graph = self.build_graph(documents, extract_triplets=extract_triplets)
 
-        self.bulk_upsert(self.indexes["entity"], graph["entities"])
-        self.bulk_upsert(self.indexes["relation"], graph["relations"])
-        self.bulk_upsert(self.indexes["passage"], graph["passages"])
+        self._bulk_upsert(self.indexes["entity"], graph["entities"])
+        self._bulk_upsert(self.indexes["relation"], graph["relations"])
+        self._bulk_upsert(self.indexes["passage"], graph["passages"])
 
         result = {
             "graph_name": self.graph_name,
@@ -108,7 +94,8 @@ class ElasticGraphRAG:
         relation_limit: int = 30,
         return_debug: bool = False,
     ) -> List[Dict[str, Any]] | Dict[str, Any]:
-        query_entities = self.extract_query_entities(query)
+        """执行向量图 RAG 检索，返回 passage 列表或 debug 详情。"""
+        query_entities = self._extract_query_entities(query)
         return self.es.vector_graph_retrieve(
             query=query,
             k=k,
@@ -126,6 +113,7 @@ class ElasticGraphRAG:
     def build_graph(
         self, documents: List[Document], extract_triplets: bool = True
     ) -> Dict[str, List[Dict[str, Any]]]:
+        """只构建图文档，不写入 ES，便于单测和调试。"""
         entity_name_to_id: Dict[str, str] = {}
         relation_text_to_id: Dict[str, str] = {}
         entity_to_relation_ids: Dict[str, set] = defaultdict(set)
@@ -139,16 +127,14 @@ class ElasticGraphRAG:
         for document in documents:
             passage_id = str(document.id or uuid.uuid4())
             document.id = passage_id
-            triplets = self.get_document_triplets(
-                document, extract_triplets=extract_triplets
-            )
+            triplets = self._get_document_triplets(document, extract_triplets)
 
             for subject, predicate, object_ in triplets:
-                subject_id = self.get_entity_id(subject, entity_name_to_id)
-                object_id = self.get_entity_id(object_, entity_name_to_id)
+                subject_id = self._get_entity_id(subject, entity_name_to_id)
+                object_id = self._get_entity_id(object_, entity_name_to_id)
                 relation_text = f"{subject} {predicate} {object_}"
                 relation_id = relation_text_to_id.setdefault(
-                    self.normalize(relation_text), self.stable_id("rel", relation_text)
+                    self._normalize(relation_text), self._stable_id("rel", relation_text)
                 )
 
                 relation_triplets[relation_id] = (subject, predicate, object_)
@@ -161,52 +147,50 @@ class ElasticGraphRAG:
                 passage_to_entity_ids[passage_id].update([subject_id, object_id])
                 passage_to_relation_ids[passage_id].add(relation_id)
 
-        entities = self.build_entity_docs(
-            entity_name_to_id, entity_to_relation_ids, entity_to_passage_ids
-        )
-        relations = self.build_relation_docs(
-            relation_triplets, relation_to_entity_ids, relation_to_passage_ids
-        )
-        passages = self.build_passage_docs(
-            documents, passage_to_entity_ids, passage_to_relation_ids
-        )
-        return {"entities": entities, "relations": relations, "passages": passages}
+        return {
+            "entities": self._build_entity_docs(
+                entity_name_to_id, entity_to_relation_ids, entity_to_passage_ids
+            ),
+            "relations": self._build_relation_docs(
+                relation_triplets, relation_to_entity_ids, relation_to_passage_ids
+            ),
+            "passages": self._build_passage_docs(
+                documents, passage_to_entity_ids, passage_to_relation_ids
+            ),
+        }
 
-    def build_entity_docs(
+    def _build_entity_docs(
         self,
         entity_name_to_id: Dict[str, str],
         entity_to_relation_ids: Dict[str, set],
         entity_to_passage_ids: Dict[str, set],
     ) -> List[Dict[str, Any]]:
-        docs = []
         id_to_entity_name = {
             entity_id: name for name, entity_id in entity_name_to_id.items()
         }
-        for entity_id, entity_name in id_to_entity_name.items():
-            docs.append(
-                {
+        return [
+            {
+                "id": entity_id,
+                "content": entity_name,
+                "metadata": {
                     "id": entity_id,
-                    "content": entity_name,
-                    "metadata": {
-                        "id": entity_id,
-                        "name": entity_name,
-                        "type": "entity",
-                        "relation_ids": sorted(entity_to_relation_ids[entity_id]),
-                        "passage_ids": sorted(entity_to_passage_ids[entity_id]),
-                    },
-                }
-            )
-        return docs
+                    "name": entity_name,
+                    "type": "entity",
+                    "relation_ids": sorted(entity_to_relation_ids[entity_id]),
+                    "passage_ids": sorted(entity_to_passage_ids[entity_id]),
+                },
+            }
+            for entity_id, entity_name in id_to_entity_name.items()
+        ]
 
-    def build_relation_docs(
+    def _build_relation_docs(
         self,
         relation_triplets: Dict[str, Tuple[str, str, str]],
         relation_to_entity_ids: Dict[str, set],
         relation_to_passage_ids: Dict[str, set],
     ) -> List[Dict[str, Any]]:
         docs = []
-        for relation_id, triplet in relation_triplets.items():
-            subject, predicate, object_ = triplet
+        for relation_id, (subject, predicate, object_) in relation_triplets.items():
             docs.append(
                 {
                     "id": relation_id,
@@ -224,7 +208,7 @@ class ElasticGraphRAG:
             )
         return docs
 
-    def build_passage_docs(
+    def _build_passage_docs(
         self,
         documents: List[Document],
         passage_to_entity_ids: Dict[str, set],
@@ -251,43 +235,47 @@ class ElasticGraphRAG:
             )
         return docs
 
-    def get_document_triplets(
-        self, document: Document, extract_triplets: bool = True
+    def _get_document_triplets(
+        self, document: Document, extract_triplets: bool
     ) -> List[Tuple[str, str, str]]:
         raw_triplets = document.metadata.get("triplets") if document.metadata else None
         if raw_triplets:
-            return self.parse_triplets(raw_triplets)
+            return self._parse_triplets(raw_triplets)
         if not extract_triplets:
             return []
-        return self.extract_triplets(document.page_content)
+        return self._extract_triplets(document.page_content)
 
-    def extract_triplets(self, text: str) -> List[Tuple[str, str, str]]:
-        model = self.get_chat_model()
+    def _extract_triplets(self, text: str) -> List[Tuple[str, str, str]]:
+        model = self._get_chat_model()
         response = model.invoke(TRIPLET_PROMPT.format(text=text[:8000]))
         content = response.content if hasattr(response, "content") else str(response)
-        return self.parse_triplets(self.load_json_object(content).get("triplets", []))
+        return self._parse_triplets(self._load_json_object(content).get("triplets", []))
 
-    def extract_query_entities(self, query: str) -> List[str]:
+    def _extract_query_entities(self, query: str) -> List[str]:
         try:
-            model = self.get_chat_model()
+            model = self._get_chat_model()
             response = model.invoke(QUERY_ENTITY_PROMPT.format(query=query))
             content = response.content if hasattr(response, "content") else str(response)
-            entities = self.load_json_object(content).get("entities", [])
+            entities = self._load_json_object(content).get("entities", [])
             return [str(entity).strip() for entity in entities if str(entity).strip()]
         except Exception as exc:
             logger.warning("查询实体抽取失败，使用简单切词: {}", exc)
-            return self.simple_extract_entities(query)
+            return self._simple_extract_entities(query)
 
-    def bulk_upsert(self, index_name: str, docs: List[Dict[str, Any]]) -> None:
+    def _bulk_upsert(self, index_name: str, docs: List[Dict[str, Any]]) -> None:
         if not docs:
             return
 
         first_embedding = self.es.embedding_model.embed_query(docs[0]["content"])
-        self.ensure_index(index_name, len(first_embedding))
+        self._ensure_index(index_name, len(first_embedding))
 
         operations = []
         for index, doc in enumerate(docs):
-            embedding = first_embedding if index == 0 else self.es.embedding_model.embed_query(doc["content"])
+            embedding = (
+                first_embedding
+                if index == 0
+                else self.es.embedding_model.embed_query(doc["content"])
+            )
             operations.append({"index": {"_index": index_name, "_id": doc["id"]}})
             operations.append(
                 {
@@ -299,7 +287,7 @@ class ElasticGraphRAG:
 
         self.es.es_client.bulk(operations=operations, refresh=True)
 
-    def ensure_index(self, index_name: str, dims: int) -> None:
+    def _ensure_index(self, index_name: str, dims: int) -> None:
         if self.es.es_client.indices.exists(index=index_name):
             return
 
@@ -331,13 +319,13 @@ class ElasticGraphRAG:
             },
         )
 
-    def get_chat_model(self):
+    def _get_chat_model(self):
         if self.chat_model is None:
             self.chat_model = get_chat_model()
         return self.chat_model
 
     @classmethod
-    def parse_triplets(cls, raw_triplets: Any) -> List[Tuple[str, str, str]]:
+    def _parse_triplets(cls, raw_triplets: Any) -> List[Tuple[str, str, str]]:
         triplets = []
         for item in raw_triplets or []:
             if isinstance(item, dict):
@@ -358,23 +346,23 @@ class ElasticGraphRAG:
         return list(dict.fromkeys(triplets))
 
     @classmethod
-    def get_entity_id(cls, entity_name: str, entity_name_to_id: Dict[str, str]) -> str:
-        normalized = cls.normalize(entity_name)
+    def _get_entity_id(cls, entity_name: str, entity_name_to_id: Dict[str, str]) -> str:
+        normalized = cls._normalize(entity_name)
         if normalized not in entity_name_to_id:
-            entity_name_to_id[normalized] = cls.stable_id("ent", normalized)
+            entity_name_to_id[normalized] = cls._stable_id("ent", normalized)
         return entity_name_to_id[normalized]
 
     @classmethod
-    def stable_id(cls, prefix: str, text: str) -> str:
-        digest = hashlib.md5(cls.normalize(text).encode("utf-8")).hexdigest()
+    def _stable_id(cls, prefix: str, text: str) -> str:
+        digest = hashlib.md5(cls._normalize(text).encode("utf-8")).hexdigest()
         return f"{prefix}_{digest}"
 
     @staticmethod
-    def normalize(text: str) -> str:
+    def _normalize(text: str) -> str:
         return " ".join(str(text).lower().strip().split())
 
     @staticmethod
-    def load_json_object(text: str) -> Dict[str, Any]:
+    def _load_json_object(text: str) -> Dict[str, Any]:
         try:
             return json.loads(text)
         except json.JSONDecodeError:
@@ -387,7 +375,7 @@ class ElasticGraphRAG:
                 return {}
 
     @staticmethod
-    def simple_extract_entities(query: str) -> List[str]:
+    def _simple_extract_entities(query: str) -> List[str]:
         words = []
         for raw_word in query.replace("，", " ").replace("。", " ").split():
             word = raw_word.strip("'\".,;:!?()[]{}<>《》、")
@@ -396,63 +384,57 @@ class ElasticGraphRAG:
         return list(dict.fromkeys(words))[:8]
 
 
-def graph_index_names(prefix: str) -> Dict[str, str]:
-    return ElasticGraphRAG.index_names(prefix)
+if __name__ == "__main__":
+    from pprint import pprint
 
+    from langchain_api.settings import settings
 
-def add_texts_to_elastic_graph(
-    es: Elasticsearch,
-    texts: List[str],
-    graph_name: str,
-    metadatas: Optional[List[Dict[str, Any]]] = None,
-    ids: Optional[List[str]] = None,
-    extract_triplets: bool = True,
-) -> Dict[str, Any]:
-    rag = ElasticGraphRAG(es=es, graph_name=graph_name)
-    return rag.add_texts(
-        texts=texts,
-        metadatas=metadatas,
-        ids=ids,
-        extract_triplets=extract_triplets,
+    es = Elasticsearch(
+        url=settings.ES_URL,
+        username=settings.ES_URSR,
+        password=settings.ES_PWD,
     )
+    rag = ElasticGraphRAG(es=es, graph_name="demo_graph")
 
+    documents = [
+        Document(
+            id="doc_001",
+            page_content="爱因斯坦提出了相对论。相对论改变了现代物理学。",
+            metadata={
+                "source": "demo",
+                "triplets": [
+                    ["爱因斯坦", "提出", "相对论"],
+                    ["相对论", "改变", "现代物理学"],
+                ],
+            },
+        ),
+        Document(
+            id="doc_002",
+            page_content="牛顿提出了万有引力定律。万有引力定律是经典力学的重要基础。",
+            metadata={
+                "source": "demo",
+                "triplets": [
+                    ["牛顿", "提出", "万有引力定律"],
+                    ["万有引力定律", "是", "经典力学的重要基础"],
+                ],
+            },
+        ),
+    ]
 
-def add_documents_to_elastic_graph(
-    es: Elasticsearch,
-    documents: List[Document],
-    graph_name: str,
-    extract_triplets: bool = True,
-) -> Dict[str, Any]:
-    rag = ElasticGraphRAG(es=es, graph_name=graph_name)
-    return rag.add_documents(documents=documents, extract_triplets=extract_triplets)
+    print("\n1) 写入 ES 向量图索引")
+    pprint(rag.add_documents(documents, extract_triplets=False))
 
-
-def retrieve_from_elastic_graph(
-    es: Elasticsearch,
-    query: str,
-    graph_name: str,
-    k: int = 6,
-    entity_top_k: int = 5,
-    relation_top_k: int = 8,
-    expansion_degree: int = 1,
-    relation_limit: int = 30,
-    return_debug: bool = False,
-) -> List[Dict[str, Any]] | Dict[str, Any]:
-    rag = ElasticGraphRAG(es=es, graph_name=graph_name)
-    return rag.retrieve(
-        query=query,
-        k=k,
-        entity_top_k=entity_top_k,
-        relation_top_k=relation_top_k,
-        expansion_degree=expansion_degree,
-        relation_limit=relation_limit,
-        return_debug=return_debug,
+    print("\n2) 执行向量图 RAG 检索")
+    result = rag.retrieve(
+        query="谁提出了相对论？",
+        k=3,
+        entity_top_k=3,
+        relation_top_k=3,
+        expansion_degree=1,
+        return_debug=True,
     )
+    pprint(result)
 
-
-def extract_triplets_from_text(text: str) -> List[Tuple[str, str, str]]:
-    return ElasticGraphRAG(es=None, graph_name="default").extract_triplets(text)
-
-
-def extract_query_entities(query: str) -> List[str]:
-    return ElasticGraphRAG(es=None, graph_name="default").extract_query_entities(query)
+    print("\n3) 只打印召回上下文")
+    for index, passage in enumerate(result["passages"], start=1):
+        print(f"文档 {index}: {passage['content']}")
