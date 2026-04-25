@@ -1,16 +1,14 @@
 import hashlib
-import json
-import re
 import uuid
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, Tuple
 
 from langchain_core.documents import Document
 from loguru import logger
+from pydantic import BaseModel, Field
 
 from langchain_api.elastic_utils import Elasticsearch
 from langchain_api.utils import get_chat_model
-
 
 TRIPLET_PROMPT = """从文本中抽取知识图谱三元组。
 
@@ -31,6 +29,22 @@ QUERY_ENTITY_PROMPT = """从问题中抽取检索知识图谱需要的实体名�
 问题：
 {query}
 """
+
+
+class ExtractedTriplet(BaseModel):
+    subject: str = Field(description="主语实体")
+    predicate: str = Field(description="关系谓词")
+    object: str = Field(description="宾语实体")
+
+
+class TripletExtractionResult(BaseModel):
+    triplets: List[ExtractedTriplet] = Field(
+        default_factory=list, description="从文本中明确抽取出的三元组"
+    )
+
+
+class QueryEntityExtractionResult(BaseModel):
+    entities: List[str] = Field(default_factory=list, description="问题中的实体名")
 
 
 class ElasticGraphRAG:
@@ -123,7 +137,11 @@ class ElasticGraphRAG:
             self.es.es_client.indices.delete(index=index_name)
             deleted[kind] = "deleted"
 
-        return {"graph_name": self.graph_name, "indexes": self.indexes, "result": deleted}
+        return {
+            "graph_name": self.graph_name,
+            "indexes": self.indexes,
+            "result": deleted,
+        }
 
     def delete_documents(self, doc_ids: List[str]) -> Dict[str, Any]:
         """
@@ -133,7 +151,11 @@ class ElasticGraphRAG:
         """
         doc_ids = [str(doc_id) for doc_id in doc_ids if doc_id]
         if not doc_ids:
-            return {"deleted_passages": 0, "deleted_relations": 0, "deleted_entities": 0}
+            return {
+                "deleted_passages": 0,
+                "deleted_relations": 0,
+                "deleted_entities": 0,
+            }
 
         relations = self._search_by_terms(
             self.indexes["relation"], "metadata.passage_ids", doc_ids, size=10000
@@ -144,10 +166,14 @@ class ElasticGraphRAG:
 
         deleted_passages = self._delete_ids(self.indexes["passage"], doc_ids)
         deleted_relations, kept_relation_ids = self._delete_or_detach_by_passage_ids(
-            index_name=self.indexes["relation"], docs=relations, deleted_passage_ids=doc_ids
+            index_name=self.indexes["relation"],
+            docs=relations,
+            deleted_passage_ids=doc_ids,
         )
         deleted_entities, _ = self._delete_or_detach_by_passage_ids(
-            index_name=self.indexes["entity"], docs=entities, deleted_passage_ids=doc_ids
+            index_name=self.indexes["entity"],
+            docs=entities,
+            deleted_passage_ids=doc_ids,
         )
 
         if deleted_relations:
@@ -163,7 +189,9 @@ class ElasticGraphRAG:
     def delete_by_query(self, query: str) -> Dict[str, Any]:
         """先检索 passage，再按召回到的 passage id 删除。"""
         result = self.retrieve(query=query, k=100, return_debug=False)
-        doc_ids = [str(doc.get("metadata", {}).get("id") or doc.get("id")) for doc in result]
+        doc_ids = [
+            str(doc.get("metadata", {}).get("id") or doc.get("id")) for doc in result
+        ]
         return self.delete_documents(doc_ids)
 
     def build_graph(
@@ -190,7 +218,8 @@ class ElasticGraphRAG:
                 object_id = self._get_entity_id(object_, entity_name_to_id)
                 relation_text = f"{subject} {predicate} {object_}"
                 relation_id = relation_text_to_id.setdefault(
-                    self._normalize(relation_text), self._stable_id("rel", relation_text)
+                    self._normalize(relation_text),
+                    self._stable_id("rel", relation_text),
                 )
 
                 relation_triplets[relation_id] = (subject, predicate, object_)
@@ -302,18 +331,27 @@ class ElasticGraphRAG:
         return self._extract_triplets(document.page_content)
 
     def _extract_triplets(self, text: str) -> List[Tuple[str, str, str]]:
-        model = self._get_chat_model()
-        response = model.invoke(TRIPLET_PROMPT.format(text=text[:8000]))
-        content = response.content if hasattr(response, "content") else str(response)
-        return self._parse_triplets(self._load_json_object(content).get("triplets", []))
+        model = self._get_chat_model().with_structured_output(
+            TripletExtractionResult, method="json_mode"
+        )
+        result: TripletExtractionResult = model.invoke(TRIPLET_PROMPT.format(text=text))
+        return [
+            (triplet.subject, triplet.predicate, triplet.object)
+            for triplet in result.triplets
+            if triplet.subject and triplet.predicate and triplet.object
+        ]
 
     def _extract_query_entities(self, query: str) -> List[str]:
         try:
-            model = self._get_chat_model()
-            response = model.invoke(QUERY_ENTITY_PROMPT.format(query=query))
-            content = response.content if hasattr(response, "content") else str(response)
-            entities = self._load_json_object(content).get("entities", [])
-            return [str(entity).strip() for entity in entities if str(entity).strip()]
+            model = self._get_chat_model().with_structured_output(
+                QueryEntityExtractionResult, method="json_mode"
+            )
+            result: QueryEntityExtractionResult = model.invoke(
+                QUERY_ENTITY_PROMPT.format(query=query)
+            )
+            return [
+                str(entity).strip() for entity in result.entities if str(entity).strip()
+            ]
         except Exception as exc:
             logger.warning("查询实体抽取失败，使用简单切词: {}", exc)
             return self._simple_extract_entities(query)
@@ -405,7 +443,9 @@ class ElasticGraphRAG:
     def _delete_ids(self, index_name: str, doc_ids: List[str]) -> int:
         if not doc_ids or not self.es.es_client.indices.exists(index=index_name):
             return 0
-        operations = [{"delete": {"_index": index_name, "_id": doc_id}} for doc_id in doc_ids]
+        operations = [
+            {"delete": {"_index": index_name, "_id": doc_id}} for doc_id in doc_ids
+        ]
         result = self.es.es_client.bulk(operations=operations, refresh=True)
         return sum(
             1
@@ -502,19 +542,6 @@ class ElasticGraphRAG:
         return " ".join(str(text).lower().strip().split())
 
     @staticmethod
-    def _load_json_object(text: str) -> Dict[str, Any]:
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            match = re.search(r"\{.*\}", text, flags=re.S)
-            if not match:
-                return {}
-            try:
-                return json.loads(match.group(0))
-            except json.JSONDecodeError:
-                return {}
-
-    @staticmethod
     def _simple_extract_entities(query: str) -> List[str]:
         words = []
         for raw_word in query.replace("，", " ").replace("。", " ").split():
@@ -540,44 +567,44 @@ if __name__ == "__main__":
         Document(
             id="doc_001",
             page_content="爱因斯坦提出了相对论。相对论改变了现代物理学。",
-            metadata={
-                "source": "demo",
-                "triplets": [
-                    ["爱因斯坦", "提出", "相对论"],
-                    ["相对论", "改变", "现代物理学"],
-                ],
-            },
+            # metadata={
+            #     "source": "demo",
+            #     "triplets": [
+            #         ["爱因斯坦", "提出", "相对论"],
+            #         ["相对论", "改变", "现代物理学"],
+            #     ],
+            # },
         ),
         Document(
             id="doc_002",
             page_content="牛顿提出了万有引力定律。万有引力定律是经典力学的重要基础。",
-            metadata={
-                "source": "demo",
-                "triplets": [
-                    ["牛顿", "提出", "万有引力定律"],
-                    ["万有引力定律", "是", "经典力学的重要基础"],
-                ],
-            },
+            # metadata={
+            #     "source": "demo",
+            #     "triplets": [
+            #         ["牛顿", "提出", "万有引力定律"],
+            #         ["万有引力定律", "是", "经典力学的重要基础"],
+            #     ],
+            # },
         ),
     ]
 
-    # print("\n1) 写入 ES 向量图索引")
-    # pprint(rag.add_documents(documents, extract_triplets=True))
+    print("\n1) 写入 ES 向量图索引")
+    pprint(rag.add_documents(documents, extract_triplets=True))
 
-    # print("\n2) 执行向量图 RAG 检索")
-    # result = rag.retrieve(
-    #     query="谁提出了相对论？",
-    #     k=3,
-    #     entity_top_k=3,
-    #     relation_top_k=3,
-    #     expansion_degree=1,
-    #     return_debug=True,
-    # )
-    # pprint(result)
+    print("\n2) 执行向量图 RAG 检索")
+    result = rag.retrieve(
+        query="谁提出了相对论？",
+        k=3,
+        entity_top_k=3,
+        relation_top_k=3,
+        expansion_degree=1,
+        return_debug=True,
+    )
+    pprint(result)
 
-    # print("\n3) 只打印召回上下文")
-    # for index, passage in enumerate(result["passages"], start=1):
-    #     print(f"文档 {index}: {passage['content']}")
+    print("\n3) 只打印召回上下文")
+    for index, passage in enumerate(result["passages"], start=1):
+        print(f"文档 {index}: {passage['content']}")
 
     # 删除单个文档及其孤立实体/关系：
     # pprint(rag.delete_documents(["doc_002"]))
