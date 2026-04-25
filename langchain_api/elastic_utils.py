@@ -1,10 +1,9 @@
 from typing import Any, Dict, List, Optional
 
 from elasticsearch import Elasticsearch as ESClient
-from langchain_core.documents import Document
 from loguru import logger
 
-from hb_rs.utils import get_embedding_model
+from langchain_api.utils import get_embedding_model
 
 
 class Elasticsearch:
@@ -39,8 +38,12 @@ class Elasticsearch:
         return self._es_client
 
     def vector_search(
-        self, query: str, k: int = 3, index_name: Optional[str] = None
-    ) -> List[Document]:
+        self,
+        query: str,
+        k: int = 3,
+        index_name: Optional[str] = None,
+        min_similarity: Optional[float] = None,
+    ) -> List[Dict[str, Any]]:
         if not index_name:
             raise ValueError("index_name is required for search operations")
         query_vector = self.embedding_model.embed_query(query)
@@ -51,24 +54,29 @@ class Elasticsearch:
                     "knn": {
                         "field": "embedding",
                         "query_vector": query_vector,
-                        "k": k,
                         "num_candidates": k * 2,
                     }
                 }
             },
             size=k,
         )
-        return [
-            Document(
-                page_content=hit["_source"].get("content", ""),
-                metadata=hit["_source"].get("metadata", {}),
+        processed_results = []
+        for hit in results["hits"]["hits"]:
+            score = hit["_score"]
+            if min_similarity is not None and score < min_similarity:
+                continue
+            processed_results.append(
+                {
+                    "content": hit["_source"].get("content", ""),
+                    "metadata": hit["_source"].get("metadata", {}),
+                    "score": score,
+                }
             )
-            for hit in results["hits"]["hits"]
-        ]
+        return processed_results
 
     def keyword_search(
         self, query: str, k: int = 3, index_name: Optional[str] = None
-    ) -> List[Document]:
+    ) -> List[Dict[str, Any]]:
         if not index_name:
             raise ValueError("index_name is required for search operations")
         results = self.es_client.search(
@@ -86,33 +94,33 @@ class Elasticsearch:
             size=k,
         )
         return [
-            Document(
-                page_content=hit["_source"].get("content", ""),
-                metadata=hit["_source"].get("metadata", {}),
-            )
+            {
+                "content": hit["_source"].get("content", ""),
+                "metadata": hit["_source"].get("metadata", {}),
+            }
             for hit in results["hits"]["hits"]
         ]
 
     def retrieve(
         self, query: str, k: int = 3, index_name: Optional[str] = None
-    ) -> List[Document]:
+    ) -> List[Dict[str, Any]]:
         if not index_name:
             raise ValueError("index_name is required for retrieve operations")
         vector_results = self.vector_search(query, k, index_name)
         keyword_results = self.keyword_search(query, k, index_name)
 
-        seen_ids = set()
+        seen_contents = set()
         merged_results = []
         for doc in vector_results:
-            doc_id = id(doc)
-            if doc_id not in seen_ids:
-                seen_ids.add(doc_id)
+            content_hash = hash(doc.get("content", ""))
+            if content_hash not in seen_contents:
+                seen_contents.add(content_hash)
                 merged_results.append(doc)
 
         for doc in keyword_results:
-            doc_id = id(doc)
-            if doc_id not in seen_ids:
-                seen_ids.add(doc_id)
+            content_hash = hash(doc.get("content", ""))
+            if content_hash not in seen_contents:
+                seen_contents.add(content_hash)
                 merged_results.append(doc)
 
         logger.info(
@@ -145,7 +153,9 @@ class Elasticsearch:
         return result["_id"]
 
     def add_batch(
-        self, documents: List[Document], index_name: Optional[str] = None
+        self,
+        documents: List[Dict[str, Any]],
+        index_name: Optional[str] = None,
     ) -> List[str]:
         if not index_name:
             raise ValueError("index_name is required for add_batch operations")
@@ -153,13 +163,14 @@ class Elasticsearch:
             return []
         operations = []
         for doc in documents:
-            embedding = self.embedding_model.embed_query(doc.page_content)
+            content = doc.get("content", "")
+            embedding = self.embedding_model.embed_query(content)
             operations.append({"index": {"_index": index_name}})
             operations.append(
                 {
-                    "content": doc.page_content,
+                    "content": content,
                     "embedding": embedding,
-                    "metadata": doc.metadata or {},
+                    "metadata": doc.get("metadata", {}),
                 }
             )
 
@@ -231,16 +242,18 @@ class Elasticsearch:
         )
         return results
 
-    def get(self, doc_id: str, index_name: Optional[str] = None) -> Optional[Document]:
+    def get(
+        self, doc_id: str, index_name: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
         if not index_name:
             raise ValueError("index_name is required for get operations")
         try:
             result = self.es_client.get(index=index_name, id=doc_id)
             source = result["_source"]
-            return Document(
-                page_content=source.get("content", ""),
-                metadata=source.get("metadata", {}),
-            )
+            return {
+                "content": source.get("content", ""),
+                "metadata": source.get("metadata", {}),
+            }
         except Exception as e:
             logger.error(f"获取文档失败: id={doc_id}, error={e}")
             return None
@@ -251,7 +264,7 @@ class Elasticsearch:
         k: int = 3,
         filter_conditions: Optional[Dict[str, Any]] = None,
         index_name: Optional[str] = None,
-    ) -> List[Document]:
+    ) -> List[Dict[str, Any]]:
         if not index_name:
             raise ValueError("index_name is required for search operations")
         must_clauses = []
@@ -277,17 +290,17 @@ class Elasticsearch:
 
         results = self.es_client.search(index=index_name, body=search_body, size=k)
         return [
-            Document(
-                page_content=hit["_source"].get("content", ""),
-                metadata=hit["_source"].get("metadata", {}),
-            )
+            {
+                "content": hit["_source"].get("content", ""),
+                "metadata": hit["_source"].get("metadata", {}),
+            }
             for hit in results["hits"]["hits"]
         ]
 
     def exists(self, doc_id: str, index_name: Optional[str] = None) -> bool:
         if not index_name:
             raise ValueError("index_name is required for exists operations")
-        return self.es_client.exists(index=index_name, id=doc_id).body
+        return self.es_client.exists(index=index_name, id=doc_id)
 
     def count(
         self,
