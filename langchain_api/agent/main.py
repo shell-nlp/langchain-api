@@ -1,9 +1,8 @@
-import os
+﻿import os
 
 from ag_ui_langgraph import add_langgraph_fastapi_endpoint
 from copilotkit import LangGraphAGUIAgent
 from fastapi import FastAPI
-from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -15,7 +14,6 @@ from langchain_api.patch.langchain import patch_langchain
 
 try:
     if os.getenv("PHOENIX_COLLECTOR_ENDPOINT"):
-        # 添加可观测性组件
         from phoenix.otel import register
 
         tracer_provider = register(
@@ -26,10 +24,10 @@ except ImportError:
     pass
 patch_langchain()
 
-frontend_path = root_dir / "frontend_old"
+next_frontend_path = root_dir / "frontend" / "out"
 
 app = FastAPI()
-# 解决跨域问题
+# 瑙ｅ喅璺ㄥ煙闂
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -37,24 +35,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-# 将 html 路由到 /
-app.mount(
-    "/web",
-    StaticFiles(
-        directory=frontend_path,
-        html=True,
-    ),
-    name="frontend",
-)
-
-
-@app.get("/")
-def redirect_to_frontend():
-    return RedirectResponse(url="/web/index.html")
-
-
 agent = Agent(deep_agent=True).get_agent()
-# 支持 AG-UI 协议
+# 鏀寔 AG-UI 鍗忚
 add_langgraph_fastapi_endpoint(
     app=app,
     agent=LangGraphAGUIAgent(
@@ -64,13 +46,24 @@ add_langgraph_fastapi_endpoint(
     ),
     path="/api/ag_ui",
 )
-# 添加 general_api 端点
+# 娣诲姞 general_api 绔偣
 add_general_api_endpoint(
     app=app,
     agent=agent,
     path="/api/general_api",
     context=AgentContext,
 )
+
+
+if next_frontend_path.exists():
+    app.mount(
+        "/",
+        StaticFiles(
+            directory=next_frontend_path,
+            html=True,
+        ),
+        name="next_frontend",
+    )
 
 
 if __name__ == "__main__":

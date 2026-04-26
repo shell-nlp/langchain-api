@@ -1,80 +1,121 @@
 # AGENTS.md
 
-## Project Structure
+## 项目结构
 
-- **Backend**: `langchain_api/` - FastAPI + LangGraph agent (Python 3.12)
-- **Frontend**: `frontend/` - Next.js 16 (React 19) with CopilotKit UI
-- **Legacy UI**: `frontend_old/` - Simple HTML/JS frontend (served at `/web`)
+- **后端**：`langchain_api/`，FastAPI + LangGraph/DeepAgents，Python 3.12。
+- **前端**：`frontend/`，Next.js + React。构建后通过 FastAPI 的 `/` 路径直接提供静态页面。
+- **工作区**：`.langchain_api/workspace`，由 `langchain_api/constant.py` 定义。
 
-## Dev Commands
+## 常用命令
 
 ```bash
-# Backend setup
+# 后端初始化
 cp .env.example .env
 uv sync --dev
 
-# Run backend (port 7869)
+# 启动后端，端口 7869
 uv run uvicorn langchain_api.agent.main:app --reload --host 0.0.0.0 --port 7869
 
-# Frontend
-cd frontend && pnpm install
+# 新前端开发
+cd frontend
+pnpm install
 pnpm dev      # http://localhost:3000
-pnpm build
 pnpm lint
 
-# Phoenix observability (optional, docker-compose)
+# 构建 Next.js 静态前端，输出到 frontend/out
+pnpm build
+
+# Phoenix 可观测性，可选
 docker-compose up -d phoenix  # http://localhost:6006
 ```
 
-## Environment Variables
+## 前后端入口
 
-Required in `.env`:
-- `OPENAI_API_BASE`, `OPENAI_API_KEY` - LLM endpoint
-- `CHAT_MODEL_NAME` - e.g., `qwen3`
-- `EMBEDDING_MODEL_NAME` - e.g., `qwen3-embedding`
-- `ES_URL`, `ES_URSR`, `ES_PWD` - Elasticsearch for RAG
+`langchain_api/agent/main.py` 是 FastAPI 入口：
 
-Optional:
-- `BACKEND_TYPE` - `local_shell` (default), `store`, `sandbox`
-- `TAVILY_API_KEY` - Enable web search tool
-- `PG_DATABASE_URL` - Enable PostgresStore for persistent memory
-- `USE_TOOL_SEARCH=True` - Enable deferred tool loading
-- `USE_COPILOTKIT=True` - Enable CopilotKit middleware
-- `PHOENIX_COLLECTOR_ENDPOINT` - Enable Phoenix tracing
+- `/`：挂载 `frontend/out`，用于访问 Next.js 静态构建结果。
+- `/api/ag_ui`：AG-UI 协议接口，使用 `LangGraphAGUIAgent`。
+- `/api/general_api`：通用流式接口，SSE 输出。
 
-## Architecture
+注意：修改新前端后，需要在 `frontend/` 下执行 `pnpm build`，后端才会通过 `/` 提供最新静态页面。
 
-### Backend Entry Point
-`langchain_api/agent/main.py` - FastAPI app with three endpoints:
-- `/api/ag_ui` - AG-UI protocol (LangGraphAGUIAgent)
-- `/api/general_api` - Streaming general API (SSE)
-- `/web/*` - Legacy HTML frontend
+## 环境变量
 
-### Agent System
-`langchain_api/agent/agent.py`:
-- `Agent` class creates either DeepAgent (default) or ReactAgent
-- `BusinessMiddleware` - handles `internet_search`, `deep_thinking` flags
-- `DeferredToolMiddleware` - lazy tool loading when `USE_TOOL_SEARCH=True`
-- Three backends: `local_shell`, `store`, `sandbox`
+`.env` 必填：
 
-### Key Files
-- `settings.py` - Loads `.env` via `pydantic_settings`
-- `constant.py` - `workspace_path` = `.langchain_api/workspace`
-- `patch/langchain.py` - Monkey-patches `add_ai_message_chunks` for streaming fix
-- `retriever.py` - Elasticsearch RAG with BM25 + DenseVector
-- `middleware/` - Skills loading, sandbox integration, RAG injection
+- `OPENAI_API_BASE`、`OPENAI_API_KEY`：LLM 接口地址和密钥。
+- `CHAT_MODEL_NAME`：聊天模型名称，例如 `qwen3`。
+- `EMBEDDING_MODEL_NAME`：向量模型名称，例如 `qwen3-embedding`。
+- `ES_URL`、`ES_URSR`、`ES_PWD`：Elasticsearch 连接配置。
 
-## Sandbox Backend
+可选：
 
-Uses OpenSandbox config from `.sandbox.toml`:
+- `BACKEND_TYPE`：`local_shell`、`store`、`sandbox`，默认 `local_shell`。
+- `TAVILY_API_KEY`：启用联网搜索工具。
+- `PG_DATABASE_URL`：启用 PostgresStore 持久化记忆。
+- `USE_TOOL_SEARCH=True`：启用延迟工具加载。
+- `USE_COPILOTKIT=True`：启用 CopilotKit 中间件。
+- `PHOENIX_COLLECTOR_ENDPOINT`：启用 Phoenix tracing。
+
+## 后端架构
+
+### Agent 系统
+
+`langchain_api/agent/agent.py`：
+
+- `Agent` 默认创建 DeepAgent，也支持 ReactAgent。
+- `BusinessMiddleware` 处理 `internet_search`、`deep_thinking` 等业务开关。
+- `DeferredToolMiddleware` 在 `USE_TOOL_SEARCH=True` 时延迟加载工具。
+- 支持 `local_shell`、`store`、`sandbox` 三种后端执行方式。
+
+### RAG 与检索
+
+- `langchain_api/retriever.py`：基础 Elasticsearch 检索工具，包含 DenseVector/BM25 和图 RAG 工具入口。
+- `langchain_api/elastic_utils.py`：Elasticsearch 基础封装，包含普通检索、向量检索和向量图检索。
+- `langchain_api/elastic_graph_rag.py`：基于 ES 的向量图 RAG。
+  - `ElasticGraphRAG.add_texts()`：文本入库并构建图索引。
+  - `ElasticGraphRAG.add_documents()`：`Document` 入库并构建图索引。
+  - `ElasticGraphRAG.retrieve()`：执行实体/关系召回、图扩展、关系裁剪和 passage 回收。
+  - `ElasticGraphRAG.delete_documents()`：按文档 ID 删除 passage，并清理孤立实体/关系。
+  - `ElasticGraphRAG.delete_graph()`：删除当前图的三类索引。
+
+### 关键文件
+
+- `langchain_api/settings.py`：通过 `pydantic_settings` 加载 `.env`。
+- `langchain_api/utils.py`：创建聊天模型和 embedding 模型。
+- `langchain_api/constant.py`：定义根目录和工作区路径。
+- `langchain_api/patch/langchain.py`：修补 LangChain 流式消息合并逻辑。
+- `langchain_api/middleware/`：技能加载、沙箱集成、RAG 注入等中间件。
+
+## Sandbox 后端
+
+使用 `.sandbox.toml` 配置 OpenSandbox：
+
 ```bash
-# Start sandbox server
 opensandbox-server --config .sandbox.toml
 ```
 
-Sandbox requires Playwright: `playwright install --with-deps chromium`
+Sandbox 依赖 Playwright：
 
-## Testing
+```bash
+playwright install --with-deps chromium
+```
 
-- No test framework configured yet (no `pytest`, `unittest` configs)
-- Integration tests require `ANTHROPIC_API_KEY` set
+## 开发注意事项
+
+- 修改后端 Python 文件后，优先运行：
+
+```bash
+uv run python -m py_compile <changed_file.py>
+```
+
+- 修改前端后，优先运行：
+
+```bash
+cd frontend
+pnpm lint
+pnpm build
+```
+
+- 当前没有统一测试框架配置，不要随意新增测试框架或重构无关模块。
+- 修改已有代码时保持最小改动，优先修根因，不要顺手改无关问题。
