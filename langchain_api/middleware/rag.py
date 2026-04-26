@@ -13,6 +13,7 @@ from langchain_deepseek import ChatDeepSeek
 from langgraph.runtime import Runtime
 from loguru import logger
 
+from langchain_api.rag.elastic_graph_rag import ElasticGraphRAG
 from langchain_api.rag.elastic_utils import Elasticsearch
 
 RAG_SYSTEM_PROMPT = """<角色>您是一个精通文档引用的问答专家，能够精准依据来源内容构建回答。</角色>
@@ -239,6 +240,17 @@ class RAGMiddleware(AgentMiddleware[CustomState]):
             raise ValueError("runtime.context.index_name is required")
         return index_name
 
+    def _get_graph_name(self, runtime: Runtime) -> str | None:
+        context = runtime.context
+        graph_name = getattr(context, "graph_name", None) if context else None
+        if graph_name:
+            return graph_name
+
+        index_name = getattr(context, "index_name", None) if context else None
+        if index_name and str(index_name).endswith("_passages"):
+            return str(index_name)[: -len("_passages")]
+        return None
+
     def _get_rewrite_query(self, messages: List[BaseMessage]) -> str:
         """用户根据历史消息重写query
 
@@ -300,7 +312,11 @@ class RAGMiddleware(AgentMiddleware[CustomState]):
         return router
 
     def _get_retrieve_result(
-        self, query: str, index_name: str, k: int = 3
+        self,
+        query: str,
+        index_name: str,
+        graph_name: str | None = None,
+        k: int = 3,
     ) -> List[tuple[Document, float | None]]:
         """根据 query 检索结果。
 
@@ -319,7 +335,12 @@ class RAGMiddleware(AgentMiddleware[CustomState]):
             检索结果及分数
         """
         try:
-            hits = self.es.retrieve(query=query, k=k, index_name=index_name)
+            if graph_name:
+                rag = ElasticGraphRAG(self.es, graph_name)
+                raw_result = rag.retrieve(query=query, k=k)
+                hits = raw_result["passages"] if isinstance(raw_result, dict) else raw_result
+            else:
+                hits = self.es.retrieve(query=query, k=k, index_name=index_name)
             results = []
             for item in hits:
                 results.append(
@@ -348,12 +369,13 @@ class RAGMiddleware(AgentMiddleware[CustomState]):
 </当前的时间>"""
         if router == "RAG":
             index_name = self._get_index_name(runtime)
+            graph_name = self._get_graph_name(runtime)
             # 改写问题
             query = self._get_rewrite_query(messages)
             logger.info(f"用于检索的问题：{query}")
             # 检索结果
             retrieved_docs = self._get_retrieve_result(
-                query=query, index_name=index_name, k=3
+                query=query, index_name=index_name, graph_name=graph_name, k=3
             )
             context = ""
             docs = []

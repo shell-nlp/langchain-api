@@ -1,7 +1,16 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback, KeyboardEvent } from 'react'
+import {
+  ChangeEvent,
+  KeyboardEvent,
+  MouseEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react'
 import { marked } from 'marked'
+
 import styles from './ChatInterface.module.css'
 
 interface Message {
@@ -49,8 +58,89 @@ interface StreamEvent {
   }
 }
 
+interface KnowledgeBase {
+  knowledge_base_id: string
+  user_id: string
+  name: string
+  description: string
+  index_prefix: string
+  passage_index: string
+  entity_index: string
+  relation_index: string
+  document_count: number
+  chunk_count: number
+  created_at: string
+  updated_at: string
+}
+
+interface KnowledgeDocument {
+  document_id: string
+  knowledge_base_id: string
+  user_id: string
+  file_name: string
+  display_name: string
+  content_type: string
+  file_size: number
+  chunk_count: number
+  storage_path: string
+  created_at: string
+  updated_at: string
+}
+
+interface UploadResult {
+  knowledge_base: KnowledgeBase
+  documents: KnowledgeDocument[]
+  errors: Array<{
+    file_name: string
+    error: string
+  }>
+}
+
+interface PaginatedKnowledgeBaseResponse {
+  items: KnowledgeBase[]
+  total: number
+  page: number
+  page_size: number
+}
+
+interface PaginatedKnowledgeDocumentResponse {
+  items: KnowledgeDocument[]
+  total: number
+  page: number
+  page_size: number
+}
+
+interface BulkDeleteKnowledgeBaseResponse {
+  deleted_ids: string[]
+  failed: Record<string, string>
+}
+
+interface BulkDeleteDocumentResponse {
+  deleted_ids: string[]
+  failed: Record<string, string>
+  knowledge_base?: KnowledgeBase | null
+}
+
+type ViewMode = 'chat' | 'knowledge'
+type RequestMode = 'agent' | 'rag'
+
 const DEFAULT_BACKEND_URL = 'http://localhost:7869'
-const DEFAULT_API_PATH = '/api/agent/general_api'
+const DEFAULT_AGENT_API_PATH = '/api/agent/general_api'
+const DEFAULT_RAG_API_PATH = '/api/rag/general_api'
+const KB_LIST_API_PATH = '/api/rag/knowledge-bases/list'
+const KB_CREATE_API_PATH = '/api/rag/knowledge-bases/create'
+const KB_DETAIL_API_PATH = '/api/rag/knowledge-bases/detail'
+const KB_UPDATE_API_PATH = '/api/rag/knowledge-bases/update'
+const KB_DELETE_API_PATH = '/api/rag/knowledge-bases/delete'
+const KB_BULK_DELETE_API_PATH = '/api/rag/knowledge-bases/bulk-delete'
+const KB_DOCUMENT_LIST_API_PATH = '/api/rag/knowledge-bases/documents/list'
+const KB_DOCUMENT_UPLOAD_API_PATH = '/api/rag/knowledge-bases/documents/upload'
+const KB_DOCUMENT_UPDATE_API_PATH = '/api/rag/knowledge-bases/documents/update'
+const KB_DOCUMENT_DELETE_API_PATH = '/api/rag/knowledge-bases/documents/delete'
+const KB_DOCUMENT_BULK_DELETE_API_PATH =
+  '/api/rag/knowledge-bases/documents/bulk-delete'
+const KNOWLEDGE_BASE_PAGE_SIZE = 8
+const DOCUMENT_PAGE_SIZE = 10
 
 function getApiBaseUrl(): string {
   const envUrl = process.env.NEXT_PUBLIC_API_BASE_URL
@@ -66,15 +156,14 @@ function getApiBaseUrl(): string {
   return origin
 }
 
-function getGeneralApiUrl(): string {
-  const apiPath = process.env.NEXT_PUBLIC_GENERAL_API_PATH || DEFAULT_API_PATH
-  return `${getApiBaseUrl()}${apiPath.startsWith('/') ? apiPath : `/${apiPath}`}`
+function getApiUrl(path: string): string {
+  return `${getApiBaseUrl()}${path}`
 }
 
 function generateSessionId(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = Math.random() * 16 | 0
-    const v = c === 'x' ? r : (r & 0x3 | 0x8)
+    const r = (Math.random() * 16) | 0
+    const v = c === 'x' ? r : (r & 0x3) | 0x8
     return v.toString(16)
   })
 }
@@ -83,24 +172,77 @@ function generateMessageId(): string {
   return `msg_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
 }
 
+function formatDateTime(value: string): string {
+  try {
+    return new Intl.DateTimeFormat('zh-CN', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(new Date(value))
+  } catch {
+    return value
+  }
+}
+
+function getPageTotal(total: number, pageSize: number): number {
+  return Math.max(1, Math.ceil(total / pageSize))
+}
+
+async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(url, init)
+  if (!response.ok) {
+    let message = `HTTP ${response.status}`
+    try {
+      const payload = await response.json()
+      if (payload?.detail) {
+        message = String(payload.detail)
+      }
+    } catch {
+      // ignore parse error
+    }
+    throw new Error(message)
+  }
+  return response.json() as Promise<T>
+}
+
 function getToolIcon(toolName: string): string {
   const iconMap: Record<string, string> = {
-    search: '🔍', calculator: '🧮', calc: '🧮', math: '📐',
-    weather: '🌤️', time: '⏰', date: '📅', file: '📄',
-    read: '📖', write: '✍️', edit: '✏️', api: '🌐',
-    http: '🌐', request: '📡', fetch: '📡', python: '🐍',
-    code: '💻', exec: '⚡', run: '▶️', bash: '💻',
-    git: '📦', github: '🐙', email: '📧', translate: '🌐',
-    analyze: '📊', chart: '📈', browser: '🌐'
+    search: 'S',
+    calculator: 'M',
+    calc: 'M',
+    math: 'M',
+    weather: 'W',
+    time: 'T',
+    date: 'D',
+    file: 'F',
+    read: 'R',
+    write: 'W',
+    edit: 'E',
+    api: 'A',
+    http: 'A',
+    request: 'A',
+    fetch: 'A',
+    python: 'P',
+    code: 'C',
+    exec: 'C',
+    run: 'R',
+    bash: 'B',
+    git: 'G',
+    translate: 'TR',
+    analyze: 'AN',
+    browser: 'BR',
   }
   const lower = toolName.toLowerCase()
   for (const [key, icon] of Object.entries(iconMap)) {
     if (lower.includes(key)) return icon
   }
-  return '🔧'
+  return 'TL'
 }
 
 export default function ChatInterface() {
+  const [viewMode, setViewMode] = useState<ViewMode>('chat')
+
   const [messages, setMessages] = useState<Message[]>([])
   const [inputValue, setInputValue] = useState('')
   const [sessionId, setSessionId] = useState('')
@@ -108,14 +250,52 @@ export default function ChatInterface() {
   const [isProcessing, setIsProcessing] = useState(false)
   const [internetSearch, setInternetSearch] = useState(false)
   const [deepThinking, setDeepThinking] = useState(false)
+  const [useKnowledgeBase, setUseKnowledgeBase] = useState(false)
   const [showInterrupt, setShowInterrupt] = useState(false)
   const [interruptData, setInterruptData] = useState<StreamEvent['data']['__interrupt__'] | null>(null)
-  
+
+  const [userId, setUserId] = useState('demo-user')
+  const [userIdDraft, setUserIdDraft] = useState('demo-user')
+
+  const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([])
+  const [knowledgeBaseTotal, setKnowledgeBaseTotal] = useState(0)
+  const [knowledgeBasePage, setKnowledgeBasePage] = useState(1)
+  const [knowledgeBaseSearchInput, setKnowledgeBaseSearchInput] = useState('')
+  const [knowledgeBaseSearch, setKnowledgeBaseSearch] = useState('')
+
+  const [selectedKnowledgeBaseId, setSelectedKnowledgeBaseId] = useState('')
+  const [selectedKnowledgeBase, setSelectedKnowledgeBase] = useState<KnowledgeBase | null>(null)
+  const [selectedKnowledgeBaseName, setSelectedKnowledgeBaseName] = useState('')
+  const [selectedKnowledgeBaseDescription, setSelectedKnowledgeBaseDescription] = useState('')
+  const [checkedKnowledgeBaseIds, setCheckedKnowledgeBaseIds] = useState<string[]>([])
+
+  const [documents, setDocuments] = useState<KnowledgeDocument[]>([])
+  const [documentTotal, setDocumentTotal] = useState(0)
+  const [documentPage, setDocumentPage] = useState(1)
+  const [documentSearchInput, setDocumentSearchInput] = useState('')
+  const [documentSearch, setDocumentSearch] = useState('')
+  const [checkedDocumentIds, setCheckedDocumentIds] = useState<string[]>([])
+
+  const [knowledgeBaseName, setKnowledgeBaseName] = useState('')
+  const [knowledgeBaseDescription, setKnowledgeBaseDescription] = useState('')
+
+  const [managementError, setManagementError] = useState('')
+  const [managementNotice, setManagementNotice] = useState('')
+  const [loadingKnowledgeBases, setLoadingKnowledgeBases] = useState(false)
+  const [loadingKnowledgeBaseDetail, setLoadingKnowledgeBaseDetail] = useState(false)
+  const [loadingDocuments, setLoadingDocuments] = useState(false)
+  const [savingKnowledgeBase, setSavingKnowledgeBase] = useState(false)
+  const [uploadingDocuments, setUploadingDocuments] = useState(false)
+  const [deletingBulk, setDeletingBulk] = useState(false)
+
   const chatContainerRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const uploadInputRef = useRef<HTMLInputElement>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
   const currentAssistantMessageIdRef = useRef<string | null>(null)
   const processedToolCallIdsRef = useRef<Set<string>>(new Set())
+  const requestModeRef = useRef<RequestMode>('agent')
+  const requestKnowledgeBaseRef = useRef<KnowledgeBase | null>(null)
 
   const scrollToBottom = useCallback(() => {
     if (chatContainerRef.current) {
@@ -123,41 +303,20 @@ export default function ChatInterface() {
     }
   }, [])
 
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const existingId = localStorage.getItem('chat_session_id')
-      const nextId = existingId || generateSessionId()
-      localStorage.setItem('chat_session_id', nextId)
-      setSessionId(nextId)
-    }
-  }, [])
-
-  useEffect(() => {
-    scrollToBottom()
-  }, [messages, scrollToBottom])
-
-  // 监听localStorage中的会话ID变化，确保多个标签页之间的同步
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const handleStorageChange = (event: StorageEvent) => {
-        if (event.key === 'chat_session_id' && event.newValue) {
-          setSessionId(event.newValue)
-        }
-      }
-      
-      window.addEventListener('storage', handleStorageChange)
-      
-      return () => {
-        window.removeEventListener('storage', handleStorageChange)
-      }
-    }
+  const clearChat = useCallback(() => {
+    setMessages([])
+    currentAssistantMessageIdRef.current = null
+    processedToolCallIdsRef.current.clear()
+    const newId = generateSessionId()
+    localStorage.setItem('rag_chat_session_id', newId)
+    setSessionId(newId)
   }, [])
 
   const addMessage = useCallback((message: Message) => {
-    setMessages(prev => {
-      const existing = prev.find(m => m.id === message.id)
+    setMessages((prev) => {
+      const existing = prev.find((item) => item.id === message.id)
       if (existing) {
-        return prev.map(m => m.id === message.id ? { ...m, ...message } : m)
+        return prev.map((item) => (item.id === message.id ? { ...item, ...message } : item))
       }
       return [...prev, message]
     })
@@ -173,12 +332,34 @@ export default function ChatInterface() {
     return assistantMessageId
   }, [addMessage])
 
-  const updateAssistantMessage = useCallback((updater: (message: Message) => Message) => {
-    const assistantMessageId = ensureAssistantMessage()
-    setMessages(prev => prev.map(msg => (
-      msg.id === assistantMessageId ? updater(msg) : msg
-    )))
-  }, [ensureAssistantMessage])
+  const updateAssistantMessage = useCallback(
+    (updater: (message: Message) => Message) => {
+      const assistantMessageId = ensureAssistantMessage()
+      setMessages((prev) =>
+        prev.map((item) => (item.id === assistantMessageId ? updater(item) : item))
+      )
+    },
+    [ensureAssistantMessage]
+  )
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const storedUserId = localStorage.getItem('rag_user_id') || 'demo-user'
+    const storedSessionId =
+      localStorage.getItem('rag_chat_session_id') || generateSessionId()
+
+    localStorage.setItem('rag_user_id', storedUserId)
+    localStorage.setItem('rag_chat_session_id', storedSessionId)
+
+    setUserId(storedUserId)
+    setUserIdDraft(storedUserId)
+    setSessionId(storedSessionId)
+  }, [])
+
+  useEffect(() => {
+    scrollToBottom()
+  }, [messages, scrollToBottom])
 
   const escapeHtml = (text: string): string => {
     const div = document.createElement('div')
@@ -204,243 +385,823 @@ export default function ChatInterface() {
     }
   }
 
-  const handleStreamEvent = useCallback((event: StreamEvent) => {
-    const data = event.data
-    if (!data) return
+  const loadKnowledgeBases = useCallback(
+    async (targetUserId: string, page = knowledgeBasePage, search = knowledgeBaseSearch) => {
+      setLoadingKnowledgeBases(true)
+      setManagementError('')
 
-    switch (event.event) {
-      case 'token': {
-        if (data.reasoning_token) {
-          updateAssistantMessage(msg => ({
-            ...msg,
-            reasoningContent: `${msg.reasoningContent || ''}${data.reasoning_token}`
-          }))
-        }
+      try {
+        const result = await fetchJson<PaginatedKnowledgeBaseResponse>(
+          getApiUrl(KB_LIST_API_PATH),
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              user_id: targetUserId,
+              search,
+              page,
+              page_size: KNOWLEDGE_BASE_PAGE_SIZE,
+            }),
+          }
+        )
+        setKnowledgeBases(result.items)
+        setKnowledgeBaseTotal(result.total)
 
-        if (data.token) {
-          updateAssistantMessage(msg => ({
-            ...msg,
-            content: `${msg.content}${data.token}`
-          }))
+        if (!selectedKnowledgeBaseId && result.items.length > 0) {
+          const first = result.items[0]
+          setSelectedKnowledgeBaseId(first.knowledge_base_id)
+          setSelectedKnowledgeBase(first)
+          setSelectedKnowledgeBaseName(first.name)
+          setSelectedKnowledgeBaseDescription(first.description)
+        } else if (selectedKnowledgeBaseId) {
+          const matched = result.items.find(
+            (item) => item.knowledge_base_id === selectedKnowledgeBaseId
+          )
+          if (matched) {
+            setSelectedKnowledgeBase(matched)
+            setSelectedKnowledgeBaseName(matched.name)
+            setSelectedKnowledgeBaseDescription(matched.description)
+          }
         }
-        break
+      } catch (error) {
+        setManagementError(
+          error instanceof Error ? error.message : 'Failed to load knowledge bases.'
+        )
+        setKnowledgeBases([])
+        setKnowledgeBaseTotal(0)
+      } finally {
+        setLoadingKnowledgeBases(false)
       }
+    },
+    [knowledgeBasePage, knowledgeBaseSearch, selectedKnowledgeBaseId]
+  )
 
-      case 'tool_calls': {
-        if (data.tool_calls?.length) {
-          updateAssistantMessage(msg => {
-            const tools = [...(msg.toolData || [])]
-            for (const toolCall of data.tool_calls || []) {
-              if (!tools.some(tool => tool.toolCall.id === toolCall.id)) {
-                tools.push({ toolCall, toolOutput: [] })
-              }
-            }
-            return { ...msg, toolData: tools }
-          })
-        }
-        break
-      }
-
-      case 'tool_output': {
-        if (data.tool_output?.length) {
-          updateAssistantMessage(msg => {
-            let tools = [...(msg.toolData || [])]
-
-            for (const output of data.tool_output || []) {
-              if (processedToolCallIdsRef.current.has(output.tool_call_id)) {
-                continue
-              }
-              processedToolCallIdsRef.current.add(output.tool_call_id)
-
-              const normalizedOutput = {
-                ...output,
-                content: stringifyToolContent(output.content)
-              }
-              const existingToolIndex = tools.findIndex(tool => tool.toolCall.id === output.tool_call_id)
-
-              if (existingToolIndex >= 0) {
-                const existingTool = tools[existingToolIndex]
-                tools = tools.map((tool, index) => (
-                  index === existingToolIndex
-                    ? {
-                        ...existingTool,
-                        toolOutput: [...(existingTool.toolOutput || []), normalizedOutput]
-                      }
-                    : tool
-                ))
-              } else {
-                tools.push({
-                  toolCall: {
-                    id: output.tool_call_id,
-                    name: 'tool',
-                    args: {}
-                  },
-                  toolOutput: [normalizedOutput]
-                })
-              }
-            }
-
-            return { ...msg, toolData: tools }
-          })
-        }
-        break
-      }
-
-      case '__interrupt__': {
-        if (data.__interrupt__) {
-          setInterruptData(data.__interrupt__)
-          setShowInterrupt(true)
-          setIsProcessing(false)
-          setStatus('ready')
-        }
-        break
-      }
+  const loadKnowledgeBaseDetail = useCallback(async (targetUserId: string, knowledgeBaseId: string) => {
+    if (!knowledgeBaseId) return
+    setLoadingKnowledgeBaseDetail(true)
+    setManagementError('')
+    try {
+      const result = await fetchJson<KnowledgeBase>(getApiUrl(KB_DETAIL_API_PATH), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: targetUserId,
+          knowledge_base_id: knowledgeBaseId,
+        }),
+      })
+      setSelectedKnowledgeBase(result)
+      setSelectedKnowledgeBaseId(result.knowledge_base_id)
+      setSelectedKnowledgeBaseName(result.name)
+      setSelectedKnowledgeBaseDescription(result.description)
+    } catch (error) {
+      setManagementError(
+        error instanceof Error ? error.message : 'Failed to load knowledge base.'
+      )
+    } finally {
+      setLoadingKnowledgeBaseDetail(false)
     }
-  }, [updateAssistantMessage])
+  }, [])
 
-  const readEventStream = useCallback(async (response: Response) => {
-    const reader = response.body?.getReader()
-    if (!reader) throw new Error('No response body')
+  const loadDocuments = useCallback(
+    async (
+      targetUserId: string,
+      knowledgeBaseId: string,
+      page = documentPage,
+      search = documentSearch
+    ) => {
+      if (!knowledgeBaseId) {
+        setDocuments([])
+        setDocumentTotal(0)
+        return
+      }
 
-    const decoder = new TextDecoder()
-    let buffer = ''
+      setLoadingDocuments(true)
+      setManagementError('')
+      try {
+        const result = await fetchJson<PaginatedKnowledgeDocumentResponse>(
+          getApiUrl(KB_DOCUMENT_LIST_API_PATH),
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              user_id: targetUserId,
+              knowledge_base_id: knowledgeBaseId,
+              search,
+              page,
+              page_size: DOCUMENT_PAGE_SIZE,
+            }),
+          }
+        )
+        setDocuments(result.items)
+        setDocumentTotal(result.total)
+      } catch (error) {
+        setManagementError(
+          error instanceof Error ? error.message : 'Failed to load documents.'
+        )
+        setDocuments([])
+        setDocumentTotal(0)
+      } finally {
+        setLoadingDocuments(false)
+      }
+    },
+    [documentPage, documentSearch]
+  )
 
-    const processChunk = (chunk: string) => {
-      const normalized = chunk.replace(/\r\n/g, '\n')
-      const parts = normalized.split('\n\n')
-      buffer = parts.pop() || ''
+  useEffect(() => {
+    if (!userId) return
+    void loadKnowledgeBases(userId, knowledgeBasePage, knowledgeBaseSearch)
+  }, [knowledgeBasePage, knowledgeBaseSearch, loadKnowledgeBases, userId])
 
-      for (const part of parts) {
-        const dataLines = part
-          .split('\n')
-          .map(line => line.trim())
-          .filter(line => line.startsWith('data:'))
-          .map(line => line.slice(5).trim())
+  useEffect(() => {
+    if (!selectedKnowledgeBaseId) {
+      setSelectedKnowledgeBase(null)
+      setDocuments([])
+      setDocumentTotal(0)
+      return
+    }
+    void loadKnowledgeBaseDetail(userId, selectedKnowledgeBaseId)
+  }, [loadKnowledgeBaseDetail, selectedKnowledgeBaseId, userId])
 
-        if (dataLines.length === 0) continue
+  useEffect(() => {
+    if (!selectedKnowledgeBaseId) return
+    void loadDocuments(userId, selectedKnowledgeBaseId, documentPage, documentSearch)
+  }, [documentPage, documentSearch, loadDocuments, selectedKnowledgeBaseId, userId])
 
-        try {
-          handleStreamEvent(JSON.parse(dataLines.join('\n')) as StreamEvent)
-        } catch (error) {
-          console.error('Parse error:', error, dataLines.join('\n'))
+  const selectKnowledgeBase = (knowledgeBase: KnowledgeBase) => {
+    if (useKnowledgeBase && knowledgeBase.knowledge_base_id !== selectedKnowledgeBaseId) {
+      clearChat()
+      setCheckedDocumentIds([])
+    }
+    setSelectedKnowledgeBaseId(knowledgeBase.knowledge_base_id)
+    setSelectedKnowledgeBase(knowledgeBase)
+    setSelectedKnowledgeBaseName(knowledgeBase.name)
+    setSelectedKnowledgeBaseDescription(knowledgeBase.description)
+    setDocumentPage(1)
+    setDocumentSearch('')
+    setDocumentSearchInput('')
+  }
+
+  const handleKnowledgeBaseToggle = (checked: boolean) => {
+    if (checked !== useKnowledgeBase) {
+      clearChat()
+      setShowInterrupt(false)
+      setInterruptData(null)
+      requestModeRef.current = checked ? 'rag' : 'agent'
+      requestKnowledgeBaseRef.current = checked ? selectedKnowledgeBase : null
+    }
+    setUseKnowledgeBase(checked)
+  }
+
+  const applyUserId = () => {
+    const normalizedUserId = userIdDraft.trim() || 'demo-user'
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('rag_user_id', normalizedUserId)
+    }
+    setUserId(normalizedUserId)
+    setKnowledgeBasePage(1)
+    setKnowledgeBaseSearch('')
+    setKnowledgeBaseSearchInput('')
+    setDocumentPage(1)
+    setDocumentSearch('')
+    setDocumentSearchInput('')
+    setSelectedKnowledgeBaseId('')
+    setSelectedKnowledgeBase(null)
+    setKnowledgeBases([])
+    setDocuments([])
+    setCheckedKnowledgeBaseIds([])
+    setCheckedDocumentIds([])
+    setManagementNotice(`Active user switched to ${normalizedUserId}.`)
+    setManagementError('')
+    clearChat()
+  }
+
+  const createKnowledgeBase = async () => {
+    const name = knowledgeBaseName.trim()
+    if (!name) {
+      setManagementError('Knowledge base name is required.')
+      return
+    }
+
+    setSavingKnowledgeBase(true)
+    setManagementError('')
+    setManagementNotice('')
+
+    try {
+      const created = await fetchJson<KnowledgeBase>(getApiUrl(KB_CREATE_API_PATH), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: userId,
+          name,
+          description: knowledgeBaseDescription.trim(),
+        }),
+      })
+
+      setKnowledgeBasePage(1)
+      await loadKnowledgeBases(userId, 1, knowledgeBaseSearch)
+      selectKnowledgeBase(created)
+      setKnowledgeBaseName('')
+      setKnowledgeBaseDescription('')
+      setManagementNotice(`Knowledge base "${created.name}" created.`)
+    } catch (error) {
+      setManagementError(
+        error instanceof Error ? error.message : 'Failed to create knowledge base.'
+      )
+    } finally {
+      setSavingKnowledgeBase(false)
+    }
+  }
+
+  const saveKnowledgeBase = async () => {
+    if (!selectedKnowledgeBase) return
+
+    setSavingKnowledgeBase(true)
+    setManagementError('')
+    setManagementNotice('')
+
+    try {
+      const updated = await fetchJson<KnowledgeBase>(getApiUrl(KB_UPDATE_API_PATH), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: userId,
+          knowledge_base_id: selectedKnowledgeBase.knowledge_base_id,
+          name: selectedKnowledgeBaseName.trim(),
+          description: selectedKnowledgeBaseDescription.trim(),
+        }),
+      })
+      await loadKnowledgeBases(userId, knowledgeBasePage, knowledgeBaseSearch)
+      selectKnowledgeBase(updated)
+      setManagementNotice(`Knowledge base "${updated.name}" updated.`)
+    } catch (error) {
+      setManagementError(
+        error instanceof Error ? error.message : 'Failed to update knowledge base.'
+      )
+    } finally {
+      setSavingKnowledgeBase(false)
+    }
+  }
+
+  const deleteKnowledgeBase = async (knowledgeBaseId?: string) => {
+    const targetId = knowledgeBaseId || selectedKnowledgeBase?.knowledge_base_id
+    const targetName =
+      knowledgeBases.find((item) => item.knowledge_base_id === targetId)?.name ||
+      selectedKnowledgeBase?.name ||
+      'knowledge base'
+
+    if (!targetId) return
+    if (!window.confirm(`Delete knowledge base "${targetName}" and all Elasticsearch data?`)) {
+      return
+    }
+
+    setSavingKnowledgeBase(true)
+    setManagementError('')
+    setManagementNotice('')
+
+    try {
+      await fetchJson<unknown>(getApiUrl(KB_DELETE_API_PATH), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: userId,
+          knowledge_base_id: targetId,
+        }),
+      })
+
+      if (targetId === selectedKnowledgeBaseId) {
+        setSelectedKnowledgeBaseId('')
+        setSelectedKnowledgeBase(null)
+        setSelectedKnowledgeBaseName('')
+        setSelectedKnowledgeBaseDescription('')
+        setDocuments([])
+        setDocumentTotal(0)
+      }
+      setCheckedKnowledgeBaseIds((prev) => prev.filter((item) => item !== targetId))
+      await loadKnowledgeBases(userId, knowledgeBasePage, knowledgeBaseSearch)
+      setManagementNotice(`Knowledge base "${targetName}" deleted.`)
+      clearChat()
+    } catch (error) {
+      setManagementError(
+        error instanceof Error ? error.message : 'Failed to delete knowledge base.'
+      )
+    } finally {
+      setSavingKnowledgeBase(false)
+    }
+  }
+
+  const bulkDeleteKnowledgeBases = async () => {
+    if (checkedKnowledgeBaseIds.length === 0) return
+    if (
+      !window.confirm(
+        `Delete ${checkedKnowledgeBaseIds.length} selected knowledge base(s) and all Elasticsearch data?`
+      )
+    ) {
+      return
+    }
+
+    setDeletingBulk(true)
+    setManagementError('')
+    setManagementNotice('')
+
+    try {
+      const result = await fetchJson<BulkDeleteKnowledgeBaseResponse>(
+        getApiUrl(KB_BULK_DELETE_API_PATH),
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_id: userId,
+            knowledge_base_ids: checkedKnowledgeBaseIds,
+          }),
+        }
+      )
+      if (result.deleted_ids.includes(selectedKnowledgeBaseId)) {
+        setSelectedKnowledgeBaseId('')
+        setSelectedKnowledgeBase(null)
+        setSelectedKnowledgeBaseName('')
+        setSelectedKnowledgeBaseDescription('')
+        setDocuments([])
+        setDocumentTotal(0)
+        clearChat()
+      }
+      setCheckedKnowledgeBaseIds([])
+      await loadKnowledgeBases(userId, knowledgeBasePage, knowledgeBaseSearch)
+      setManagementNotice(
+        `Deleted ${result.deleted_ids.length} knowledge base(s).`
+      )
+      if (Object.keys(result.failed).length > 0) {
+        setManagementError(
+          Object.entries(result.failed)
+            .map(([id, message]) => `${id}: ${message}`)
+            .join('\n')
+        )
+      }
+    } catch (error) {
+      setManagementError(
+        error instanceof Error ? error.message : 'Failed to bulk delete knowledge bases.'
+      )
+    } finally {
+      setDeletingBulk(false)
+    }
+  }
+
+  const openUploadDialog = () => {
+    uploadInputRef.current?.click()
+  }
+
+  const handleUploadFiles = async (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || [])
+    if (!selectedKnowledgeBase || files.length === 0) return
+
+    setUploadingDocuments(true)
+    setManagementError('')
+    setManagementNotice('')
+
+    const formData = new FormData()
+    formData.append('user_id', userId)
+    formData.append('knowledge_base_id', selectedKnowledgeBase.knowledge_base_id)
+    files.forEach((file) => formData.append('files', file))
+
+    try {
+      const result = await fetchJson<UploadResult>(
+        getApiUrl(KB_DOCUMENT_UPLOAD_API_PATH),
+        {
+          method: 'POST',
+          body: formData,
+        }
+      )
+
+      await loadKnowledgeBases(userId, knowledgeBasePage, knowledgeBaseSearch)
+      await loadKnowledgeBaseDetail(userId, selectedKnowledgeBase.knowledge_base_id)
+      await loadDocuments(userId, selectedKnowledgeBase.knowledge_base_id, 1, documentSearch)
+      setDocumentPage(1)
+
+      const successCount = result.documents.length
+      const errorCount = result.errors.length
+      setManagementNotice(
+        errorCount
+          ? `${successCount} file(s) indexed, ${errorCount} failed.`
+          : `${successCount} file(s) indexed successfully.`
+      )
+      if (errorCount) {
+        setManagementError(
+          result.errors.map((item) => `${item.file_name}: ${item.error}`).join('\n')
+        )
+      }
+    } catch (error) {
+      setManagementError(
+        error instanceof Error ? error.message : 'Failed to upload files.'
+      )
+    } finally {
+      setUploadingDocuments(false)
+      event.target.value = ''
+    }
+  }
+
+  const renameDocument = async (document: KnowledgeDocument) => {
+    if (!selectedKnowledgeBase) return
+    const nextName = window.prompt('Document display name', document.display_name)
+    if (!nextName) return
+
+    setManagementError('')
+    setManagementNotice('')
+    try {
+      await fetchJson<KnowledgeDocument>(getApiUrl(KB_DOCUMENT_UPDATE_API_PATH), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: userId,
+          knowledge_base_id: selectedKnowledgeBase.knowledge_base_id,
+          document_id: document.document_id,
+          display_name: nextName,
+        }),
+      })
+      await loadDocuments(
+        userId,
+        selectedKnowledgeBase.knowledge_base_id,
+        documentPage,
+        documentSearch
+      )
+      setManagementNotice(`Document "${nextName}" updated.`)
+    } catch (error) {
+      setManagementError(
+        error instanceof Error ? error.message : 'Failed to update document.'
+      )
+    }
+  }
+
+  const deleteDocument = async (documentId?: string, documentName?: string) => {
+    if (!selectedKnowledgeBase) return
+    const targetId = documentId
+    if (!targetId) return
+    const targetName =
+      documentName ||
+      documents.find((item) => item.document_id === targetId)?.display_name ||
+      'document'
+    if (!window.confirm(`Delete document "${targetName}" from Elasticsearch?`)) return
+
+    setManagementError('')
+    setManagementNotice('')
+    try {
+      await fetchJson<unknown>(getApiUrl(KB_DOCUMENT_DELETE_API_PATH), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: userId,
+          knowledge_base_id: selectedKnowledgeBase.knowledge_base_id,
+          document_id: targetId,
+        }),
+      })
+      setCheckedDocumentIds((prev) => prev.filter((item) => item !== targetId))
+      await loadKnowledgeBases(userId, knowledgeBasePage, knowledgeBaseSearch)
+      await loadKnowledgeBaseDetail(userId, selectedKnowledgeBase.knowledge_base_id)
+      await loadDocuments(
+        userId,
+        selectedKnowledgeBase.knowledge_base_id,
+        documentPage,
+        documentSearch
+      )
+      setManagementNotice(`Document "${targetName}" deleted from Elasticsearch.`)
+    } catch (error) {
+      setManagementError(
+        error instanceof Error ? error.message : 'Failed to delete document.'
+      )
+    }
+  }
+
+  const bulkDeleteDocuments = async () => {
+    if (!selectedKnowledgeBase || checkedDocumentIds.length === 0) return
+    if (
+      !window.confirm(
+        `Delete ${checkedDocumentIds.length} selected document(s) from Elasticsearch?`
+      )
+    ) {
+      return
+    }
+
+    setDeletingBulk(true)
+    setManagementError('')
+    setManagementNotice('')
+    try {
+      const result = await fetchJson<BulkDeleteDocumentResponse>(
+        getApiUrl(KB_DOCUMENT_BULK_DELETE_API_PATH),
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_id: userId,
+            knowledge_base_id: selectedKnowledgeBase.knowledge_base_id,
+            document_ids: checkedDocumentIds,
+          }),
+        }
+      )
+      setCheckedDocumentIds([])
+      await loadKnowledgeBases(userId, knowledgeBasePage, knowledgeBaseSearch)
+      await loadKnowledgeBaseDetail(userId, selectedKnowledgeBase.knowledge_base_id)
+      await loadDocuments(
+        userId,
+        selectedKnowledgeBase.knowledge_base_id,
+        documentPage,
+        documentSearch
+      )
+      setManagementNotice(`Deleted ${result.deleted_ids.length} document(s).`)
+      if (Object.keys(result.failed).length > 0) {
+        setManagementError(
+          Object.entries(result.failed)
+            .map(([id, message]) => `${id}: ${message}`)
+            .join('\n')
+        )
+      }
+    } catch (error) {
+      setManagementError(
+        error instanceof Error ? error.message : 'Failed to bulk delete documents.'
+      )
+    } finally {
+      setDeletingBulk(false)
+    }
+  }
+
+  const handleStreamEvent = useCallback(
+    (event: StreamEvent) => {
+      const data = event.data
+      if (!data) return
+
+      switch (event.event) {
+        case 'token': {
+          if (data.reasoning_token) {
+            updateAssistantMessage((message) => ({
+              ...message,
+              reasoningContent: `${message.reasoningContent || ''}${data.reasoning_token}`,
+            }))
+          }
+
+          if (data.token) {
+            updateAssistantMessage((message) => ({
+              ...message,
+              content: `${message.content}${data.token}`,
+            }))
+          }
+          break
+        }
+
+        case 'tool_calls': {
+          if (data.tool_calls?.length) {
+            updateAssistantMessage((message) => {
+              const tools = [...(message.toolData || [])]
+              for (const toolCall of data.tool_calls || []) {
+                if (!tools.some((tool) => tool.toolCall.id === toolCall.id)) {
+                  tools.push({ toolCall, toolOutput: [] })
+                }
+              }
+              return { ...message, toolData: tools }
+            })
+          }
+          break
+        }
+
+        case 'tool_output': {
+          if (data.tool_output?.length) {
+            updateAssistantMessage((message) => {
+              let tools = [...(message.toolData || [])]
+
+              for (const output of data.tool_output || []) {
+                if (processedToolCallIdsRef.current.has(output.tool_call_id)) {
+                  continue
+                }
+                processedToolCallIdsRef.current.add(output.tool_call_id)
+
+                const normalizedOutput = {
+                  ...output,
+                  content: stringifyToolContent(output.content),
+                }
+                const existingToolIndex = tools.findIndex(
+                  (tool) => tool.toolCall.id === output.tool_call_id
+                )
+
+                if (existingToolIndex >= 0) {
+                  const existingTool = tools[existingToolIndex]
+                  tools = tools.map((tool, index) =>
+                    index === existingToolIndex
+                      ? {
+                          ...existingTool,
+                          toolOutput: [
+                            ...(existingTool.toolOutput || []),
+                            normalizedOutput,
+                          ],
+                        }
+                      : tool
+                  )
+                } else {
+                  tools.push({
+                    toolCall: {
+                      id: output.tool_call_id,
+                      name: 'tool',
+                      args: {},
+                    },
+                    toolOutput: [normalizedOutput],
+                  })
+                }
+              }
+
+              return { ...message, toolData: tools }
+            })
+          }
+          break
+        }
+
+        case '__interrupt__': {
+          if (data.__interrupt__) {
+            setInterruptData(data.__interrupt__)
+            setShowInterrupt(true)
+            setIsProcessing(false)
+            setStatus('ready')
+          }
+          break
         }
       }
-    }
+    },
+    [updateAssistantMessage]
+  )
 
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-      processChunk(buffer)
-    }
+  const readEventStream = useCallback(
+    async (response: Response) => {
+      const reader = response.body?.getReader()
+      if (!reader) throw new Error('No response body')
 
-    buffer += decoder.decode()
-    if (buffer.trim()) {
-      processChunk(`${buffer}\n\n`)
-    }
-  }, [handleStreamEvent])
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      const processChunk = (chunk: string) => {
+        const normalized = chunk.replace(/\r\n/g, '\n')
+        const parts = normalized.split('\n\n')
+        buffer = parts.pop() || ''
+
+        for (const part of parts) {
+          const dataLines = part
+            .split('\n')
+            .map((line) => line.trim())
+            .filter((line) => line.startsWith('data:'))
+            .map((line) => line.slice(5).trim())
+
+          if (dataLines.length === 0) continue
+
+          try {
+            handleStreamEvent(JSON.parse(dataLines.join('\n')) as StreamEvent)
+          } catch (error) {
+            console.error('Parse error:', error, dataLines.join('\n'))
+          }
+        }
+      }
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        processChunk(buffer)
+      }
+
+      buffer += decoder.decode()
+      if (buffer.trim()) {
+        processChunk(`${buffer}\n\n`)
+      }
+    },
+    [handleStreamEvent]
+  )
 
   const sendMessage = async () => {
     const query = inputValue.trim()
     if (!query || isProcessing || !sessionId) return
 
-    const userMsg: Message = {
+    const requestMode: RequestMode = useKnowledgeBase ? 'rag' : 'agent'
+    if (requestMode === 'rag' && !selectedKnowledgeBase) {
+      setManagementError('启用知识库后，必须先选择一个知识库。')
+      setViewMode('knowledge')
+      return
+    }
+
+    addMessage({
       id: generateMessageId(),
       role: 'user',
-      content: query
-    }
-    addMessage(userMsg)
+      content: query,
+    })
     setInputValue('')
-    
+
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto'
     }
-    
+
     setIsProcessing(true)
     setStatus('connecting')
 
     const assistantMessageId = generateMessageId()
     currentAssistantMessageIdRef.current = assistantMessageId
     processedToolCallIdsRef.current.clear()
+    requestModeRef.current = requestMode
+    requestKnowledgeBaseRef.current = selectedKnowledgeBase
     addMessage({ id: assistantMessageId, role: 'ai', content: '', toolData: [] })
 
     abortControllerRef.current = new AbortController()
 
-    const requestData = {
-      query,
-      session_id: sessionId,
-      internet_search: internetSearch,
-      deep_thinking: deepThinking
-    }
-
     try {
-      const response = await fetch(getGeneralApiUrl(), {
+      const payload: Record<string, unknown> = {
+        query,
+        session_id: sessionId,
+        user_id: userId,
+        internet_search: internetSearch,
+        deep_thinking: deepThinking,
+      }
+      if (requestMode === 'rag' && selectedKnowledgeBase) {
+        payload.index_name = selectedKnowledgeBase.passage_index
+        payload.graph_name = selectedKnowledgeBase.index_prefix
+      }
+
+      const response = await fetch(
+        getApiUrl(
+          requestMode === 'rag' ? DEFAULT_RAG_API_PATH : DEFAULT_AGENT_API_PATH
+        ),
+        {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Accept': 'text/event-stream'
+          Accept: 'text/event-stream',
         },
-        body: JSON.stringify(requestData),
-        signal: abortControllerRef.current.signal
-      })
+        body: JSON.stringify(payload),
+        signal: abortControllerRef.current.signal,
+      }
+      )
 
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
-
       await readEventStream(response)
+      setStatus('ready')
     } catch (error: unknown) {
       if (error instanceof Error && error.name !== 'AbortError') {
-        console.error('Request failed:', error)
+        setStatus('error')
         addMessage({
           id: generateMessageId(),
           role: 'ai',
-          content: `❌ 请求失败: ${error instanceof Error ? error.message : 'Unknown error'}`
+          content: `Request failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
         })
+      } else {
+        setStatus('ready')
       }
     } finally {
       setIsProcessing(false)
-      setStatus('ready')
       currentAssistantMessageIdRef.current = null
       processedToolCallIdsRef.current.clear()
     }
   }
 
-  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      sendMessage()
+  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault()
+      void sendMessage()
     }
-  }
-
-  const clearChat = () => {
-    setMessages([])
-    currentAssistantMessageIdRef.current = null
-    processedToolCallIdsRef.current.clear()
-    const newId = generateSessionId()
-    localStorage.setItem('chat_session_id', newId)
-    setSessionId(newId)
   }
 
   const abortRequest = () => {
     abortControllerRef.current?.abort()
   }
 
-  const handleInterruptAction = async (decision: 'approve' | 'reject' | 'edit', editedActions?: Array<{ name: string; args: Record<string, unknown> }>) => {
-    setShowInterrupt(false)
-    
-    const decisions = (interruptData?.action_requests || []).map((_, index) => {
-      const obj: { type: string; edited_action?: { name: string; args: Record<string, unknown> }; message?: string } = { type: decision }
-      if (decision === 'edit' && editedActions?.[index]) {
-        obj.edited_action = editedActions[index]
-      }
-      return obj
-    })
+  const handleInterruptAction = async (decision: 'approve' | 'reject' | 'edit') => {
+    if (!interruptData) return
 
+    const requestMode = requestModeRef.current
+    const requestKnowledgeBase = requestKnowledgeBaseRef.current
+    if (requestMode === 'rag' && !requestKnowledgeBase) {
+      setManagementError('当前中断来自知识库问答，但未找到对应知识库，请重新发起知识库对话。')
+      setShowInterrupt(false)
+      setInterruptData(null)
+      return
+    }
+
+    let editedActions: Array<{ name: string; args: Record<string, unknown> }> | undefined
+    if (decision === 'edit') {
+      try {
+        editedActions = interruptData.action_requests.map((action, index) => {
+          const editor = document.getElementById(
+            `argsEditor${index}`
+          ) as HTMLTextAreaElement | null
+          return {
+            name: action.name,
+            args: editor ? JSON.parse(editor.value) : action.args,
+          }
+        })
+      } catch {
+        setManagementError('Interrupt arguments must be valid JSON.')
+        return
+      }
+    }
+
+    setShowInterrupt(false)
     addMessage({
       id: generateMessageId(),
       role: 'user',
-      content: decision === 'approve' ? '✅ 已批准操作继续执行' 
-        : decision === 'reject' ? '❌ 已拒绝操作' 
-        : '✏️ 已编辑参数并继续执行'
+      content:
+        decision === 'approve'
+          ? 'Approve pending action.'
+          : decision === 'reject'
+            ? 'Reject pending action.'
+            : 'Resume with edited arguments.',
     })
 
     setIsProcessing(true)
@@ -448,272 +1209,803 @@ export default function ChatInterface() {
     abortControllerRef.current = new AbortController()
 
     try {
-      const response = await fetch(getGeneralApiUrl(), {
+      const decisions = (interruptData.action_requests || []).map((action, index) => {
+        if (decision === 'edit' && editedActions?.[index]) {
+          return {
+            type: 'edit',
+            edited_action: editedActions[index],
+          }
+        }
+        return { type: decision, message: `Decision applied to ${action.name}.` }
+      })
+
+      const payload: Record<string, unknown> = {
+        resume: { decisions },
+        session_id: sessionId,
+        user_id: userId,
+      }
+      if (requestMode === 'rag' && requestKnowledgeBase) {
+        payload.index_name = requestKnowledgeBase.passage_index
+        payload.graph_name = requestKnowledgeBase.index_prefix
+      }
+
+      const response = await fetch(
+        getApiUrl(
+          requestMode === 'rag' ? DEFAULT_RAG_API_PATH : DEFAULT_AGENT_API_PATH
+        ),
+        {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Accept': 'text/event-stream'
+          Accept: 'text/event-stream',
         },
-        body: JSON.stringify({ resume: { decisions }, session_id: sessionId }),
-        signal: abortControllerRef.current.signal
-      })
+        body: JSON.stringify(payload),
+        signal: abortControllerRef.current.signal,
+      }
+      )
 
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
-
       await readEventStream(response)
+      setStatus('ready')
     } catch (error: unknown) {
       if (error instanceof Error && error.name !== 'AbortError') {
-        console.error('Request failed:', error)
+        setStatus('error')
         addMessage({
           id: generateMessageId(),
           role: 'ai',
-          content: `❌ 请求失败: ${error instanceof Error ? error.message : 'Unknown error'}`
+          content: `Resume failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
         })
       }
     } finally {
       setIsProcessing(false)
-      setStatus('ready')
       setInterruptData(null)
       processedToolCallIdsRef.current.clear()
     }
   }
 
+  const toggleKnowledgeBaseChecked = (
+    knowledgeBaseId: string,
+    event: MouseEvent<HTMLButtonElement | HTMLInputElement>
+  ) => {
+    event.stopPropagation()
+    setCheckedKnowledgeBaseIds((prev) =>
+      prev.includes(knowledgeBaseId)
+        ? prev.filter((item) => item !== knowledgeBaseId)
+        : [...prev, knowledgeBaseId]
+    )
+  }
+
+  const toggleDocumentChecked = (
+    documentId: string,
+    event: MouseEvent<HTMLButtonElement | HTMLInputElement>
+  ) => {
+    event.stopPropagation()
+    setCheckedDocumentIds((prev) =>
+      prev.includes(documentId)
+        ? prev.filter((item) => item !== documentId)
+        : [...prev, documentId]
+    )
+  }
+
+  const knowledgeBasePageTotal = getPageTotal(
+    knowledgeBaseTotal,
+    KNOWLEDGE_BASE_PAGE_SIZE
+  )
+  const documentPageTotal = getPageTotal(documentTotal, DOCUMENT_PAGE_SIZE)
+  const chatDisabled = useKnowledgeBase && !selectedKnowledgeBase
+  const chatModeLabel = useKnowledgeBase ? '知识库 RAG' : '通用 Agent'
+
   return (
     <div className={styles.container}>
       <div className={styles.backgroundGrid} />
       <div className={styles.backgroundGlow} />
-      
+
       <header className={styles.header}>
         <div className={styles.headerContent}>
           <div className={styles.logoArea}>
-            <span className={styles.logoIcon}>◈</span>
+            <span className={styles.logoIcon}>AI</span>
             <h1 className={styles.title}>AI Agent Chat</h1>
           </div>
-          <p className={styles.subtitle}>智能助手 · 支持工具调用和流式响应</p>
+          <p className={styles.subtitle}>智能问答 · 知识库管理 · 图检索 RAG</p>
         </div>
       </header>
 
-      <div className={styles.sessionBar}>
-        <div className={styles.sessionInfo}>
-          <span className={styles.sessionLabel}>会话</span>
-          <code className={styles.sessionId}>{sessionId.slice(0, 8)}...</code>
-        </div>
-        <div className={styles.statusArea}>
-          <span className={`${styles.statusDot} ${styles[status]}`} />
-          <span className={styles.statusText}>
-            {status === 'ready' ? '就绪' : status === 'connecting' ? '处理中' : '错误'}
-          </span>
-          <button className={styles.clearBtn} onClick={clearChat}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
-            </svg>
-            清空
-          </button>
-        </div>
-      </div>
-
-      {showInterrupt && interruptData && (
-        <div className={styles.interruptPanel}>
-          <div className={styles.interruptHeader}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
-              <line x1="12" y1="9" x2="12" y2="13"/>
-              <line x1="12" y1="17" x2="12.01" y2="17"/>
-            </svg>
-            <span>需要人工确认</span>
-          </div>
-          <div className={styles.interruptContent}>
-            {interruptData.action_requests?.map((action, index) => (
-              <div key={index} className={styles.interruptAction}>
-                <div className={styles.interruptActionHeader}>
-                  <span className={styles.interruptToolIcon}>{getToolIcon(action.name)}</span>
-                  <span className={styles.interruptToolName}>{action.name}</span>
-                </div>
-                {action.description && (
-                  <p className={styles.interruptDescription}>{action.description}</p>
-                )}
-                <div className={styles.interruptArgsSection}>
-                  <label className={styles.interruptSectionLabel}>参数:</label>
-                  <textarea
-                    className={styles.interruptArgsEditor}
-                    defaultValue={JSON.stringify(action.args, null, 2)}
-                    rows={4}
-                    id={`argsEditor${index}`}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className={styles.interruptButtons}>
-            <button className={`${styles.interruptBtn} ${styles.approve}`} onClick={() => handleInterruptAction('approve')}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <polyline points="20 6 9 17 4 12"/>
-              </svg>
-              批准
-            </button>
-            <button className={`${styles.interruptBtn} ${styles.edit}`} onClick={() => handleInterruptAction('edit')}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
-                <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
-              </svg>
-              编辑
-            </button>
-            <button className={`${styles.interruptBtn} ${styles.reject}`} onClick={() => handleInterruptAction('reject')}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="12" cy="12" r="10"/>
-                <line x1="15" y1="9" x2="9" y2="15"/>
-                <line x1="9" y1="9" x2="15" y2="15"/>
-              </svg>
-              拒绝
-            </button>
-          </div>
-        </div>
-      )}
-
-      <div className={styles.chatContainer} ref={chatContainerRef}>
-        {messages.length === 0 ? (
-          <div className={styles.welcome}>
-            <div className={styles.welcomeIcon}>✦</div>
-            <h2>欢迎使用 AI Agent Chat</h2>
-            <p>我可以帮您执行各种任务，包括计算、查询、数据处理等。</p>
-            <div className={styles.exampleQueries}>
-              <button onClick={() => setInputValue('请你执行如下任务：\n1. 计算 10 + 10 的结果\n2. 将结果乘以 5\n3. 根据结果生成一个故事')}>
-                🧮 数学计算示例
+      <div className={styles.workspaceLayout}>
+        <aside className={styles.sidebarNav}>
+          <div className={styles.sidebarPanel}>
+            <div className={styles.sidebarBlock}>
+              <span className={styles.sidebarTitle}>导航</span>
+              <button
+                className={`${styles.sidebarButton} ${
+                  viewMode === 'chat' ? styles.sidebarButtonActive : ''
+                }`}
+                onClick={() => setViewMode('chat')}
+              >
+                聊天
               </button>
-              <button onClick={() => setInputValue('查询今天的天气情况')}>
-                🌤️ 天气查询
-              </button>
-              <button onClick={() => setInputValue('帮我分析一下当前的市场趋势')}>
-                📊 数据分析
+              <button
+                className={`${styles.sidebarButton} ${
+                  viewMode === 'knowledge' ? styles.sidebarButtonActive : ''
+                }`}
+                onClick={() => setViewMode('knowledge')}
+              >
+                知识管理
               </button>
             </div>
-          </div>
-        ) : (
-          messages.map(msg => (
-            <div key={msg.id} className={`${styles.message} ${styles[msg.role]}`}>
-              {msg.role === 'user' ? (
-                <>
-                  <div className={styles.messageHeader}>
-                    <div className={styles.avatar}>
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
-                        <circle cx="12" cy="7" r="4"/>
-                      </svg>
-                    </div>
-                    <span className={styles.author}>{"\u7528\u6237"}</span>
-                    <span className={styles.time}>{new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span>
-                  </div>
-                  <div className={styles.messageContent} dangerouslySetInnerHTML={{ __html: parseMarkdown(msg.content) }} />
-                </>
+
+            <div className={styles.sidebarBlock}>
+              <span className={styles.sidebarTitle}>用户</span>
+              <input
+                className={styles.sidebarInput}
+                value={userIdDraft}
+                onChange={(event) => setUserIdDraft(event.target.value)}
+                placeholder="用户 ID"
+              />
+              <button className={styles.sidebarAction} onClick={applyUserId}>
+                应用用户
+              </button>
+            </div>
+
+            <div className={styles.sidebarBlock}>
+              <span className={styles.sidebarTitle}>对话模式</span>
+              <div className={styles.sidebarCard}>
+                <strong>{chatModeLabel}</strong>
+                <span>{useKnowledgeBase ? '已启用知识库检索' : '当前直接调用 Agent'}</span>
+              </div>
+            </div>
+
+            <div className={styles.sidebarBlock}>
+              <span className={styles.sidebarTitle}>当前知识库</span>
+              {selectedKnowledgeBase ? (
+                <div className={styles.sidebarCard}>
+                  <strong>{selectedKnowledgeBase.name}</strong>
+                  <span>{selectedKnowledgeBase.document_count} 个文档</span>
+                  <span>{selectedKnowledgeBase.chunk_count} 个切片</span>
+                </div>
               ) : (
-                <>
-                  <div className={styles.messageHeader}>
-                    <div className={`${styles.avatar} ${styles.ai}`}>
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M12 2a2 2 0 012 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 017 7h1a1 1 0 011 1v3a1 1 0 01-1 1h-1v1a2 2 0 01-2 2H5a2 2 0 01-2-2v-1H2a1 1 0 01-1-1v-3a1 1 0 011-1h1a7 7 0 017-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 012-2M7.5 13a1.5 1.5 0 100 3 1.5 1.5 0 000-3m9 0a1.5 1.5 0 100 3 1.5 1.5 0 000-3"/>
-                      </svg>
-                    </div>
-                    <span className={styles.author}>{"AI \u52a9\u624b"}</span>
-                    <span className={styles.time}>{new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span>
-                  </div>
-                  {msg.reasoningContent && (
-                    <div className={styles.reasoningContainer}>
-                      <div className={styles.reasoningHeader}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <circle cx="12" cy="12" r="10"/>
-                          <path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/>
-                          <line x1="12" y1="17" x2="12.01" y2="17"/>
-                        </svg>
-                        <span>{"\u6df1\u5ea6\u601d\u8003"}</span>
-                      </div>
-                      <div className={styles.reasoningContent} dangerouslySetInnerHTML={{ __html: parseMarkdown(msg.reasoningContent) }} />
-                    </div>
-                  )}
-                  {msg.toolData?.map(toolData => (
-                    <ToolCard key={toolData.toolCall.id} toolData={toolData} />
-                  ))}
-                  {msg.content && (
-                    <div className={styles.messageContent} dangerouslySetInnerHTML={{ __html: parseMarkdown(msg.content) }} />
-                  )}
-                  {isProcessing && msg.id === currentAssistantMessageIdRef.current && !msg.content && !msg.reasoningContent && !msg.toolData?.length && (
-                    <div className={styles.typingIndicator}>
-                      <span /><span /><span />
-                    </div>
-                  )}
-                </>
+                <div className={styles.sidebarEmpty}>
+                  {useKnowledgeBase ? '请先选择知识库' : '未启用知识库'}
+                </div>
               )}
             </div>
-          ))
-        )}
-        
-        {isProcessing && messages[messages.length - 1]?.role !== 'ai' && (
-          <div className={`${styles.message} ${styles.ai}`}>
-            <div className={styles.messageHeader}>
-              <div className={`${styles.avatar} ${styles.ai}`}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M12 2a2 2 0 012 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 017 7h1a1 1 0 011 1v3a1 1 0 01-1 1h-1v1a2 2 0 01-2 2H5a2 2 0 01-2-2v-1H2a1 1 0 01-1-1v-3a1 1 0 011-1h1a7 7 0 017-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 012-2M7.5 13a1.5 1.5 0 100 3 1.5 1.5 0 000-3m9 0a1.5 1.5 0 100 3 1.5 1.5 0 000-3"/>
-                </svg>
-              </div>
-              <span className={styles.author}>AI 助手</span>
-            </div>
-            <div className={styles.typingIndicator}>
-              <span /><span /><span />
-            </div>
           </div>
-        )}
-      </div>
+        </aside>
 
-      <div className={styles.inputArea}>
-        <div className={styles.inputContainer}>
-          <textarea
-            ref={textareaRef}
-            className={styles.input}
-            value={inputValue}
-            onChange={e => setInputValue(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="输入您的问题或任务..."
-            rows={1}
-          />
-          <div className={styles.toggles}>
-            <label className={styles.toggle}>
-              <input
-                type="checkbox"
-                checked={internetSearch}
-                onChange={e => setInternetSearch(e.target.checked)}
-              />
-              <span className={styles.toggleSlider} />
-              <span className={styles.toggleLabel}>🌐 联网</span>
-            </label>
-            <label className={styles.toggle}>
-              <input
-                type="checkbox"
-                checked={deepThinking}
-                onChange={e => setDeepThinking(e.target.checked)}
-              />
-              <span className={styles.toggleSlider} />
-              <span className={styles.toggleLabel}>🧠 思考</span>
-            </label>
-          </div>
-        </div>
-        {isProcessing ? (
-          <button className={styles.abortBtn} onClick={abortRequest}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="12" r="10"/>
-              <line x1="15" y1="9" x2="9" y2="15"/>
-              <line x1="9" y1="9" x2="15" y2="15"/>
-            </svg>
-            中断
-          </button>
-        ) : (
-          <button className={styles.sendBtn} onClick={sendMessage} disabled={!inputValue.trim()}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="22" y1="2" x2="11" y2="13"/>
-              <polygon points="22 2 15 22 11 13 2 9 22 2"/>
-            </svg>
-            发送
-          </button>
-        )}
+        <main className={styles.mainContent}>
+          {viewMode === 'chat' ? (
+            <>
+              <div className={styles.sessionBar}>
+                <div className={styles.sessionInfo}>
+                  <span className={styles.sessionLabel}>会话</span>
+                  <code className={styles.sessionId}>{sessionId.slice(0, 8)}...</code>
+                  <span className={styles.sessionDivider}>|</span>
+                  <span className={styles.sessionLabel}>用户</span>
+                  <code className={styles.sessionId}>{userId}</code>
+                  <span className={styles.sessionDivider}>|</span>
+                  <span className={styles.sessionLabel}>模式</span>
+                  <code className={styles.sessionId}>{chatModeLabel}</code>
+                  <span className={styles.sessionDivider}>|</span>
+                  <span className={styles.sessionLabel}>知识库</span>
+                  <code className={styles.sessionId}>
+                    {useKnowledgeBase
+                      ? selectedKnowledgeBase?.name || '未选择'
+                      : '未启用'}
+                  </code>
+                </div>
+                <div className={styles.statusArea}>
+                  <span className={`${styles.statusDot} ${styles[status]}`} />
+                  <span className={styles.statusText}>
+                    {status === 'ready' ? '就绪' : status === 'connecting' ? '处理中' : '错误'}
+                  </span>
+                  <button className={styles.clearBtn} onClick={clearChat}>
+                    清空
+                  </button>
+                </div>
+              </div>
+
+              {showInterrupt && interruptData && (
+                <div className={styles.interruptPanel}>
+                  <div className={styles.interruptHeader}>
+                    <span>需要人工确认</span>
+                  </div>
+                  <div className={styles.interruptContent}>
+                    {interruptData.action_requests?.map((action, index) => (
+                      <div key={index} className={styles.interruptAction}>
+                        <div className={styles.interruptActionHeader}>
+                          <span className={styles.interruptToolIcon}>
+                            {getToolIcon(action.name)}
+                          </span>
+                          <span className={styles.interruptToolName}>{action.name}</span>
+                        </div>
+                        {action.description && (
+                          <p className={styles.interruptDescription}>{action.description}</p>
+                        )}
+                        <div className={styles.interruptArgsSection}>
+                          <label className={styles.interruptSectionLabel}>参数:</label>
+                          <textarea
+                            className={styles.interruptArgsEditor}
+                            defaultValue={JSON.stringify(action.args, null, 2)}
+                            rows={4}
+                            id={`argsEditor${index}`}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className={styles.interruptButtons}>
+                    <button
+                      className={`${styles.interruptBtn} ${styles.approve}`}
+                      onClick={() => void handleInterruptAction('approve')}
+                    >
+                      批准
+                    </button>
+                    <button
+                      className={`${styles.interruptBtn} ${styles.edit}`}
+                      onClick={() => void handleInterruptAction('edit')}
+                    >
+                      编辑
+                    </button>
+                    <button
+                      className={`${styles.interruptBtn} ${styles.reject}`}
+                      onClick={() => void handleInterruptAction('reject')}
+                    >
+                      拒绝
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className={styles.chatContainer} ref={chatContainerRef}>
+                {messages.length === 0 ? (
+                  <div className={styles.welcome}>
+                    <div className={styles.welcomeIcon}>KB</div>
+                    <h2>欢迎使用 AI Agent Chat</h2>
+                    <p>
+                      默认直接使用 Agent 对话。开启知识库后，将切到 RAG 图检索，并且必须选择一个知识库。
+                    </p>
+                    <div className={styles.exampleQueries}>
+                      <button
+                        onClick={() => setInputValue('请帮我总结一下今天要做的事情。')}
+                      >
+                        通用问答
+                      </button>
+                      <button
+                        onClick={() =>
+                          setInputValue('请列出文档中涉及的重要实体和它们之间的关系。')
+                        }
+                      >
+                        提取实体关系
+                      </button>
+                      <button onClick={() => setViewMode('knowledge')}>
+                        进入知识管理
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  messages.map((msg) => (
+                    <div key={msg.id} className={`${styles.message} ${styles[msg.role]}`}>
+                      {msg.role === 'user' ? (
+                        <>
+                          <div className={styles.messageHeader}>
+                            <div className={styles.avatar}>U</div>
+                            <span className={styles.author}>用户</span>
+                            <span className={styles.time}>
+                              {new Date().toLocaleTimeString('zh-CN', {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </span>
+                          </div>
+                          <div
+                            className={styles.messageContent}
+                            dangerouslySetInnerHTML={{ __html: parseMarkdown(msg.content) }}
+                          />
+                        </>
+                      ) : (
+                        <>
+                          <div className={styles.messageHeader}>
+                            <div className={`${styles.avatar} ${styles.ai}`}>AI</div>
+                            <span className={styles.author}>AI 助手</span>
+                            <span className={styles.time}>
+                              {new Date().toLocaleTimeString('zh-CN', {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </span>
+                          </div>
+                          {msg.reasoningContent && (
+                            <div className={styles.reasoningContainer}>
+                              <div className={styles.reasoningHeader}>
+                                <span>深度思考</span>
+                              </div>
+                              <div
+                                className={styles.reasoningContent}
+                                dangerouslySetInnerHTML={{
+                                  __html: parseMarkdown(msg.reasoningContent),
+                                }}
+                              />
+                            </div>
+                          )}
+                          {msg.toolData?.map((toolData) => (
+                            <ToolCard key={toolData.toolCall.id} toolData={toolData} />
+                          ))}
+                          {msg.content && (
+                            <div
+                              className={styles.messageContent}
+                              dangerouslySetInnerHTML={{ __html: parseMarkdown(msg.content) }}
+                            />
+                          )}
+                          {isProcessing &&
+                            msg.id === currentAssistantMessageIdRef.current &&
+                            !msg.content &&
+                            !msg.reasoningContent &&
+                            !msg.toolData?.length && (
+                              <div className={styles.typingIndicator}>
+                                <span />
+                                <span />
+                                <span />
+                              </div>
+                            )}
+                        </>
+                      )}
+                    </div>
+                  ))
+                )}
+
+                {isProcessing && messages[messages.length - 1]?.role !== 'ai' && (
+                  <div className={`${styles.message} ${styles.ai}`}>
+                    <div className={styles.messageHeader}>
+                      <div className={`${styles.avatar} ${styles.ai}`}>AI</div>
+                      <span className={styles.author}>AI 助手</span>
+                    </div>
+                    <div className={styles.typingIndicator}>
+                      <span />
+                      <span />
+                      <span />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className={styles.inputArea}>
+                <div className={styles.inputContainer}>
+                  <textarea
+                    ref={textareaRef}
+                    className={styles.input}
+                    value={inputValue}
+                    onChange={(event) => setInputValue(event.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder={
+                      useKnowledgeBase
+                        ? chatDisabled
+                          ? '请先在知识管理中选择一个知识库...'
+                          : '输入您的知识库问题...'
+                        : '输入您的问题...'
+                    }
+                    rows={1}
+                  />
+                  <div className={styles.toggles}>
+                    <label className={styles.toggle}>
+                      <input
+                        type="checkbox"
+                        checked={useKnowledgeBase}
+                        onChange={(event) =>
+                          handleKnowledgeBaseToggle(event.target.checked)
+                        }
+                      />
+                      <span className={styles.toggleSlider} />
+                      <span className={styles.toggleLabel}>知识库</span>
+                    </label>
+                    <label className={styles.toggle}>
+                      <input
+                        type="checkbox"
+                        checked={internetSearch}
+                        onChange={(event) => setInternetSearch(event.target.checked)}
+                      />
+                      <span className={styles.toggleSlider} />
+                      <span className={styles.toggleLabel}>联网</span>
+                    </label>
+                    <label className={styles.toggle}>
+                      <input
+                        type="checkbox"
+                        checked={deepThinking}
+                        onChange={(event) => setDeepThinking(event.target.checked)}
+                      />
+                      <span className={styles.toggleSlider} />
+                      <span className={styles.toggleLabel}>思考</span>
+                    </label>
+                  </div>
+                  {useKnowledgeBase && (
+                    <div className={styles.chatKnowledgeRow}>
+                      <span className={styles.chatKnowledgeStatus}>
+                        {selectedKnowledgeBase
+                          ? `当前知识库：${selectedKnowledgeBase.name}`
+                          : '已开启知识库问答，请先选择知识库'}
+                      </span>
+                      <button
+                        className={styles.chatKnowledgeAction}
+                        onClick={() => setViewMode('knowledge')}
+                      >
+                        {selectedKnowledgeBase ? '切换知识库' : '选择知识库'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+                {isProcessing ? (
+                  <button className={styles.abortBtn} onClick={abortRequest}>
+                    中断
+                  </button>
+                ) : (
+                  <button
+                    className={styles.sendBtn}
+                    onClick={() => void sendMessage()}
+                    disabled={!inputValue.trim() || chatDisabled}
+                  >
+                    发送
+                  </button>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className={styles.managementPage}>
+              <div className={styles.managementNoticeRow}>
+                {managementNotice && (
+                  <div className={styles.managementNotice}>{managementNotice}</div>
+                )}
+                {managementError && (
+                  <div className={styles.managementError}>{managementError}</div>
+                )}
+              </div>
+
+              <div className={styles.managementGrid}>
+                <section className={styles.managementCard}>
+                  <div className={styles.managementHeader}>
+                    <h3>知识库管理</h3>
+                    <span className={styles.managementMeta}>
+                      {loadingKnowledgeBases ? '加载中...' : `共 ${knowledgeBaseTotal} 条`}
+                    </span>
+                  </div>
+
+                  <div className={styles.managementToolbar}>
+                    <div className={styles.managementSearchGroup}>
+                      <input
+                        className={styles.managementInput}
+                        value={knowledgeBaseSearchInput}
+                        onChange={(event) => setKnowledgeBaseSearchInput(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            setKnowledgeBasePage(1)
+                            setKnowledgeBaseSearch(knowledgeBaseSearchInput.trim())
+                          }
+                        }}
+                        placeholder="搜索知识库名称或描述"
+                      />
+                      <button
+                        className={styles.managementButton}
+                        onClick={() => {
+                          setKnowledgeBasePage(1)
+                          setKnowledgeBaseSearch(knowledgeBaseSearchInput.trim())
+                        }}
+                      >
+                        搜索
+                      </button>
+                    </div>
+                    <button
+                      className={styles.managementDangerButton}
+                      disabled={checkedKnowledgeBaseIds.length === 0 || deletingBulk}
+                      onClick={() => void bulkDeleteKnowledgeBases()}
+                    >
+                      批量删除
+                    </button>
+                  </div>
+
+                  <div className={styles.managementForm}>
+                    <input
+                      className={styles.managementInput}
+                      value={knowledgeBaseName}
+                      onChange={(event) => setKnowledgeBaseName(event.target.value)}
+                      placeholder="新建知识库名称"
+                    />
+                    <input
+                      className={styles.managementInput}
+                      value={knowledgeBaseDescription}
+                      onChange={(event) => setKnowledgeBaseDescription(event.target.value)}
+                      placeholder="知识库描述"
+                    />
+                    <button
+                      className={styles.managementButton}
+                      disabled={savingKnowledgeBase}
+                      onClick={() => void createKnowledgeBase()}
+                    >
+                      创建知识库
+                    </button>
+                  </div>
+
+                  <div className={styles.managementList}>
+                    {knowledgeBases.length === 0 ? (
+                      <div className={styles.managementEmpty}>暂无知识库</div>
+                    ) : (
+                      knowledgeBases.map((knowledgeBase) => (
+                        <button
+                          key={knowledgeBase.knowledge_base_id}
+                          className={`${styles.managementListItem} ${
+                            selectedKnowledgeBaseId === knowledgeBase.knowledge_base_id
+                              ? styles.managementListItemActive
+                              : ''
+                          }`}
+                          onClick={() => selectKnowledgeBase(knowledgeBase)}
+                        >
+                          <div className={styles.managementListHeader}>
+                            <label
+                              className={styles.managementCheckbox}
+                              onClick={(event) =>
+                                toggleKnowledgeBaseChecked(
+                                  knowledgeBase.knowledge_base_id,
+                                  event as unknown as MouseEvent<
+                                    HTMLButtonElement | HTMLInputElement
+                                  >
+                                )
+                              }
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checkedKnowledgeBaseIds.includes(
+                                  knowledgeBase.knowledge_base_id
+                                )}
+                                onChange={() => undefined}
+                              />
+                            </label>
+                            <strong>{knowledgeBase.name}</strong>
+                            <span>{knowledgeBase.document_count} 文档</span>
+                          </div>
+                          <p className={styles.managementDescription}>
+                            {knowledgeBase.description || '无描述'}
+                          </p>
+                          <div className={styles.managementListMeta}>
+                            <span>{knowledgeBase.chunk_count} 切片</span>
+                            <span>{formatDateTime(knowledgeBase.updated_at)}</span>
+                          </div>
+                        </button>
+                      ))
+                    )}
+                  </div>
+
+                  <Pagination
+                    page={knowledgeBasePage}
+                    pageTotal={knowledgeBasePageTotal}
+                    total={knowledgeBaseTotal}
+                    onPrev={() => setKnowledgeBasePage((prev) => Math.max(1, prev - 1))}
+                    onNext={() =>
+                      setKnowledgeBasePage((prev) =>
+                        Math.min(knowledgeBasePageTotal, prev + 1)
+                      )
+                    }
+                  />
+                </section>
+
+                <section className={styles.managementCard}>
+                  <div className={styles.managementHeader}>
+                    <h3>知识库详情</h3>
+                    <span className={styles.managementMeta}>
+                      {loadingKnowledgeBaseDetail ? '加载中...' : ''}
+                    </span>
+                  </div>
+
+                  {selectedKnowledgeBase ? (
+                    <>
+                      <div className={styles.managementForm}>
+                        <input
+                          className={styles.managementInput}
+                          value={selectedKnowledgeBaseName}
+                          onChange={(event) =>
+                            setSelectedKnowledgeBaseName(event.target.value)
+                          }
+                          placeholder="知识库名称"
+                        />
+                        <input
+                          className={styles.managementInput}
+                          value={selectedKnowledgeBaseDescription}
+                          onChange={(event) =>
+                            setSelectedKnowledgeBaseDescription(event.target.value)
+                          }
+                          placeholder="知识库描述"
+                        />
+                      </div>
+                      <div className={styles.managementMetaPanel}>
+                        <span>图前缀: {selectedKnowledgeBase.index_prefix}</span>
+                        <span>Passage: {selectedKnowledgeBase.passage_index}</span>
+                        <span>文档数: {selectedKnowledgeBase.document_count}</span>
+                        <span>切片数: {selectedKnowledgeBase.chunk_count}</span>
+                      </div>
+                      <div className={styles.managementToolbar}>
+                        <button
+                          className={styles.managementButton}
+                          disabled={savingKnowledgeBase}
+                          onClick={() => void saveKnowledgeBase()}
+                        >
+                          保存
+                        </button>
+                        <button
+                          className={styles.managementDangerButton}
+                          disabled={savingKnowledgeBase}
+                          onClick={() => void deleteKnowledgeBase()}
+                        >
+                          删除当前知识库
+                        </button>
+                      </div>
+
+                      <div className={styles.managementDivider} />
+
+                      <div className={styles.managementHeader}>
+                        <h3>文档管理</h3>
+                        <span className={styles.managementMeta}>
+                          {loadingDocuments ? '加载中...' : `共 ${documentTotal} 条`}
+                        </span>
+                      </div>
+
+                      <div className={styles.managementToolbar}>
+                        <div className={styles.managementSearchGroup}>
+                          <input
+                            className={styles.managementInput}
+                            value={documentSearchInput}
+                            onChange={(event) => setDocumentSearchInput(event.target.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter') {
+                                setDocumentPage(1)
+                                setDocumentSearch(documentSearchInput.trim())
+                              }
+                            }}
+                            placeholder="搜索文档名"
+                          />
+                          <button
+                            className={styles.managementButton}
+                            onClick={() => {
+                              setDocumentPage(1)
+                              setDocumentSearch(documentSearchInput.trim())
+                            }}
+                          >
+                            搜索
+                          </button>
+                        </div>
+                        <div className={styles.managementActionGroup}>
+                          <button
+                            className={styles.managementButton}
+                            disabled={uploadingDocuments}
+                            onClick={openUploadDialog}
+                          >
+                            {uploadingDocuments ? '上传中...' : '上传文档'}
+                          </button>
+                          <button
+                            className={styles.managementDangerButton}
+                            disabled={checkedDocumentIds.length === 0 || deletingBulk}
+                            onClick={() => void bulkDeleteDocuments()}
+                          >
+                            批量删除
+                          </button>
+                          <input
+                            ref={uploadInputRef}
+                            className={styles.hiddenUpload}
+                            type="file"
+                            multiple
+                            onChange={handleUploadFiles}
+                          />
+                        </div>
+                      </div>
+
+                      <div className={styles.managementList}>
+                        {documents.length === 0 ? (
+                          <div className={styles.managementEmpty}>暂无文档</div>
+                        ) : (
+                          documents.map((document) => (
+                            <div
+                              key={document.document_id}
+                              className={styles.managementListItemStatic}
+                            >
+                              <div className={styles.managementListHeader}>
+                                <label
+                                  className={styles.managementCheckbox}
+                                  onClick={(event) =>
+                                    toggleDocumentChecked(
+                                      document.document_id,
+                                      event as unknown as MouseEvent<
+                                        HTMLButtonElement | HTMLInputElement
+                                      >
+                                    )
+                                  }
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={checkedDocumentIds.includes(document.document_id)}
+                                    onChange={() => undefined}
+                                  />
+                                </label>
+                                <strong>{document.display_name}</strong>
+                                <span>{document.chunk_count} 切片</span>
+                              </div>
+                              <p className={styles.managementDescription}>
+                                原始文件: {document.file_name}
+                              </p>
+                              <div className={styles.managementListMeta}>
+                                <span>{Math.max(1, Math.round(document.file_size / 1024))} KB</span>
+                                <span>{formatDateTime(document.updated_at)}</span>
+                              </div>
+                              <div className={styles.managementActionRow}>
+                                <button
+                                  className={styles.managementMinorButton}
+                                  onClick={() => void renameDocument(document)}
+                                >
+                                  重命名
+                                </button>
+                                <button
+                                  className={styles.managementDangerMinorButton}
+                                  onClick={() =>
+                                    void deleteDocument(
+                                      document.document_id,
+                                      document.display_name
+                                    )
+                                  }
+                                >
+                                  删除
+                                </button>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+
+                      <Pagination
+                        page={documentPage}
+                        pageTotal={documentPageTotal}
+                        total={documentTotal}
+                        onPrev={() => setDocumentPage((prev) => Math.max(1, prev - 1))}
+                        onNext={() =>
+                          setDocumentPage((prev) =>
+                            Math.min(documentPageTotal, prev + 1)
+                          )
+                        }
+                      />
+                    </>
+                  ) : (
+                    <div className={styles.managementEmpty}>请先选择一个知识库</div>
+                  )}
+                </section>
+              </div>
+            </div>
+          )}
+        </main>
       </div>
+    </div>
+  )
+}
+
+function Pagination({
+  page,
+  pageTotal,
+  total,
+  onPrev,
+  onNext,
+}: {
+  page: number
+  pageTotal: number
+  total: number
+  onPrev: () => void
+  onNext: () => void
+}) {
+  return (
+    <div className={styles.managementPagination}>
+      <button className={styles.managementMinorButton} onClick={onPrev} disabled={page <= 1}>
+        上一页
+      </button>
+      <span className={styles.managementPaginationInfo}>
+        第 {page} / {pageTotal} 页，共 {total} 条
+      </span>
+      <button
+        className={styles.managementMinorButton}
+        onClick={onNext}
+        disabled={page >= pageTotal}
+      >
+        下一页
+      </button>
     </div>
   )
 }
@@ -721,49 +2013,50 @@ export default function ChatInterface() {
 function ToolCard({ toolData }: { toolData: ToolData }) {
   const [expanded, setExpanded] = useState(false)
   const toolName = toolData.toolCall?.name || 'tool'
-  const toolIcon = getToolIcon(toolName)
-  
-  const argsStr = toolData.toolCall?.args 
+
+  const argsStr = toolData.toolCall?.args
     ? JSON.stringify(toolData.toolCall.args, null, 2)
     : ''
-  
-  const firstArgKey = toolData.toolCall?.args ? Object.keys(toolData.toolCall.args)[0] : ''
-  const firstArgValue = toolData.toolCall?.args && firstArgKey 
-    ? String(toolData.toolCall.args[firstArgKey]).slice(0, 30) 
+
+  const firstArgKey = toolData.toolCall?.args
+    ? Object.keys(toolData.toolCall.args)[0]
     : ''
-  const argsSummary = firstArgKey ? `${firstArgKey}: ${firstArgValue}${firstArgValue.length >= 30 ? '...' : ''}` : ''
+  const firstArgValue =
+    toolData.toolCall?.args && firstArgKey
+      ? String(toolData.toolCall.args[firstArgKey]).slice(0, 30)
+      : ''
+  const argsSummary = firstArgKey
+    ? `${firstArgKey}: ${firstArgValue}${firstArgValue.length >= 30 ? '...' : ''}`
+    : ''
 
   return (
-    <div className={`${styles.toolCard} ${expanded ? styles.expanded : ''}`} onClick={() => setExpanded(!expanded)}>
+    <div
+      className={`${styles.toolCard} ${expanded ? styles.expanded : ''}`}
+      onClick={() => setExpanded(!expanded)}
+    >
       <div className={styles.toolCardHeader}>
-        <div className={styles.toolIcon}>{toolIcon}</div>
+        <div className={styles.toolIcon}>{getToolIcon(toolName)}</div>
         <div className={styles.toolInfo}>
           <span className={styles.toolName}>{toolName}</span>
           <span className={styles.toolArgs}>{argsSummary}</span>
         </div>
-        <div className={`${styles.toolStatus} ${styles.success}`}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <polyline points="20 6 9 17 4 12"/>
-          </svg>
-        </div>
-        <div className={styles.toolExpandIcon}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <polyline points="6 9 12 15 18 9"/>
-          </svg>
-        </div>
+        <div className={`${styles.toolStatus} ${styles.success}`}>OK</div>
+        <div className={styles.toolExpandIcon}>{expanded ? '-' : '+'}</div>
       </div>
       {expanded && (
         <div className={styles.toolCardDetails}>
           {toolData.toolCall && (
             <div className={styles.toolDetailSection}>
               <span className={styles.toolDetailLabel}>输入参数</span>
-              <pre className={`${styles.toolDetailCode} ${styles.input}`}>{argsStr}</pre>
+              <pre className={`${styles.toolDetailCode} ${styles.inputCode}`}>{argsStr}</pre>
             </div>
           )}
           {toolData.toolOutput?.map((output, index) => (
             <div key={index} className={styles.toolDetailSection}>
               <span className={styles.toolDetailLabel}>执行结果</span>
-              <pre className={`${styles.toolDetailCode} ${styles.output}`}>{output.content}</pre>
+              <pre className={`${styles.toolDetailCode} ${styles.outputCode}`}>
+                {output.content}
+              </pre>
             </div>
           ))}
         </div>
