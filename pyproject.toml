@@ -28,6 +28,11 @@ dependencies = [
     "arize-phoenix-otel>=0.15.0",
     "sqlmodel>=0.0.22",
     "apscheduler>=3.11.0",
+    "langchain-text-splitters>=1.1.2",
+    "pdfplumber>=0.11.9",
+    "pymupdf>=1.27.2.3",
+    "pandas>=3.0.2",
+    "pypdf2>=3.0.1",
 ]
 
 [[tool.uv.index]]
