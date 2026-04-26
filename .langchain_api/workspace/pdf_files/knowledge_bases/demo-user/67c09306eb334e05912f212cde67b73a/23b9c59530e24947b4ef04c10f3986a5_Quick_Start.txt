@@ -1,0 +1,42 @@
+# 1. 查看已有的 GPU 实例
+sudo nvidia-smi mig -lgi
+
+# 2. 为每个 GI 创建 CI
+# 为 GI 1 创建 CI
+sudo nvidia-smi mig -cci -i 0 -gi 1
+
+# 为 GI 2 创建 CI
+sudo nvidia-smi mig -cci -i 0 -gi 2
+
+
+# 3 查看两个计算实例的详细信息
+sudo nvidia-smi mig -lci
+
+# 查看 GPU 显存分配
+nvidia-smi -i 0
+
+# ---------------------------
+
+
+
+# 1. 删除现有 GI
+sudo nvidia-smi mig -dgi -i 0 -gi 1
+sudo nvidia-smi mig -dgi -i 0 -gi 2
+
+# 2. 重新创建 GI 并自动创建 CI
+sudo nvidia-smi mig -i 0 -cgi 3g.71gb,0 -C
+sudo nvidia-smi mig -i 0 -cgi 3g.71gb,1 -C
+
+# 注意：-C 参数会自动创建 CI
+
+
+# --------------
+
+# 使用第一个 MIG 设备 (GI 1 CI 0)
+docker run --gpus '"device=0"' --runtime=nvidia nvidia/cuda:12.0-base nvidia-smi
+
+# 使用第二个 MIG 设备 (GI 2 CI 0)  
+docker run --gpus '"device=1"' --runtime=nvidia nvidia/cuda:12.0-base nvidia-smi
+
+# 使用 MIG UUID 指定
+docker run --gpus '"device=MIG-<UUID>"' --runtime=nvidia nvidia/cuda:12.0-base nvidia-smi

@@ -5,6 +5,7 @@ from langchain_api.rag.knowledge_base import (
     BulkDeleteDocumentResponse,
     BulkDeleteKnowledgeBaseResponse,
     KnowledgeBaseDeleteResult,
+    KnowledgeBaseDocumentDetailResponse,
     KnowledgeBaseDocumentRecord,
     KnowledgeBaseRecord,
     PaginatedKnowledgeBaseDocumentResponse,
@@ -57,6 +58,14 @@ class DocumentListRequest(BaseModel):
     user_id: str = Field(..., description="User ID")
     knowledge_base_id: str = Field(..., description="Knowledge base ID")
     search: str = Field("", description="Search text")
+    page: int = Field(1, description="Page number")
+    page_size: int = Field(10, description="Page size")
+
+
+class DocumentDetailRequest(BaseModel):
+    user_id: str = Field(..., description="User ID")
+    knowledge_base_id: str = Field(..., description="Knowledge base ID")
+    document_id: str = Field(..., description="Document ID")
     page: int = Field(1, description="Page number")
     page_size: int = Field(10, description="Page size")
 
@@ -152,6 +161,22 @@ def add_knowledge_base_management_endpoints(router: APIRouter) -> None:
                 user_id=request.user_id,
                 knowledge_base_id=request.knowledge_base_id,
                 search=request.search,
+                page=request.page,
+                page_size=request.page_size,
+            )
+        except ValueError as exc:
+            raise _handle_value_error(exc) from exc
+
+    @router.post(
+        "/knowledge-bases/documents/detail",
+        response_model=KnowledgeBaseDocumentDetailResponse,
+    )
+    def get_document_detail(request: DocumentDetailRequest):
+        try:
+            return knowledge_base_manager.get_document_detail(
+                user_id=request.user_id,
+                knowledge_base_id=request.knowledge_base_id,
+                document_id=request.document_id,
                 page=request.page,
                 page_size=request.page_size,
             )

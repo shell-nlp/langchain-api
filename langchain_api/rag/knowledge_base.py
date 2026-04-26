@@ -91,6 +91,23 @@ class BulkDeleteDocumentResponse(BaseModel):
     knowledge_base: KnowledgeBaseRecord | None = None
 
 
+class KnowledgeBaseDocumentChunkRecord(BaseModel):
+    chunk_id: str
+    document_id: str
+    segment_id: int | str | None = None
+    content: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class KnowledgeBaseDocumentDetailResponse(BaseModel):
+    knowledge_base: KnowledgeBaseRecord
+    document: KnowledgeBaseDocumentRecord
+    chunks: list[KnowledgeBaseDocumentChunkRecord] = Field(default_factory=list)
+    total_chunks: int
+    page: int
+    page_size: int
+
+
 @dataclass(slots=True)
 class UploadedKnowledgeFile:
     file_name: str
@@ -331,6 +348,68 @@ class KnowledgeBaseManager:
             refresh=True,
         )
         return KnowledgeBaseDocumentRecord(**source)
+
+    def get_document_detail(
+        self,
+        user_id: str,
+        knowledge_base_id: str,
+        document_id: str,
+        *,
+        page: int = 1,
+        page_size: int = 10,
+    ) -> KnowledgeBaseDocumentDetailResponse:
+        knowledge_base = self.get_knowledge_base(user_id, knowledge_base_id)
+        document_source = self._get_owned_document(
+            index_name=self.DOCUMENT_INDEX,
+            document_id=document_id,
+            user_id=user_id,
+            error_message="Document not found.",
+        )
+        if document_source["knowledge_base_id"] != knowledge_base_id:
+            raise ValueError("Document does not belong to this knowledge base.")
+        document = KnowledgeBaseDocumentRecord(**document_source)
+
+        page, page_size = self._normalize_page(page, page_size)
+        hits, total = self._search_with_total(
+            index_name=knowledge_base.passage_index,
+            query={
+                "bool": {
+                    "filter": [
+                        {"term": {"metadata.user_id": user_id}},
+                        {"term": {"metadata.knowledge_base_id": knowledge_base_id}},
+                        {"term": {"metadata.document_id": document_id}},
+                    ]
+                }
+            },
+            size=page_size,
+            from_=(page - 1) * page_size,
+            sort=[
+                {
+                    "metadata.segment_id": {
+                        "order": "asc",
+                        "unmapped_type": "long",
+                    }
+                }
+            ],
+        )
+        chunks = [
+            KnowledgeBaseDocumentChunkRecord(
+                chunk_id=hit["_id"],
+                document_id=document_id,
+                segment_id=hit.get("_source", {}).get("metadata", {}).get("segment_id"),
+                content=hit.get("_source", {}).get("content", ""),
+                metadata=hit.get("_source", {}).get("metadata", {}),
+            )
+            for hit in hits
+        ]
+        return KnowledgeBaseDocumentDetailResponse(
+            knowledge_base=knowledge_base,
+            document=document,
+            chunks=chunks,
+            total_chunks=total,
+            page=page,
+            page_size=page_size,
+        )
 
     def delete_document(
         self, user_id: str, knowledge_base_id: str, document_id: str

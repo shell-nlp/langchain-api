@@ -122,7 +122,25 @@ interface BulkDeleteDocumentResponse {
 }
 
 type ViewMode = 'chat' | 'knowledge'
+type KnowledgePage = 'libraries' | 'library-detail' | 'document-detail' | 'users'
 type RequestMode = 'agent' | 'rag'
+
+interface KnowledgeChunk {
+  chunk_id: string
+  document_id: string
+  segment_id?: number | string | null
+  content: string
+  metadata: Record<string, unknown>
+}
+
+interface KnowledgeDocumentDetailResponse {
+  knowledge_base: KnowledgeBase
+  document: KnowledgeDocument
+  chunks: KnowledgeChunk[]
+  total_chunks: number
+  page: number
+  page_size: number
+}
 
 const DEFAULT_BACKEND_URL = 'http://localhost:7869'
 const DEFAULT_AGENT_API_PATH = '/api/agent/general_api'
@@ -134,6 +152,7 @@ const KB_UPDATE_API_PATH = '/api/rag/knowledge-bases/update'
 const KB_DELETE_API_PATH = '/api/rag/knowledge-bases/delete'
 const KB_BULK_DELETE_API_PATH = '/api/rag/knowledge-bases/bulk-delete'
 const KB_DOCUMENT_LIST_API_PATH = '/api/rag/knowledge-bases/documents/list'
+const KB_DOCUMENT_DETAIL_API_PATH = '/api/rag/knowledge-bases/documents/detail'
 const KB_DOCUMENT_UPLOAD_API_PATH = '/api/rag/knowledge-bases/documents/upload'
 const KB_DOCUMENT_UPDATE_API_PATH = '/api/rag/knowledge-bases/documents/update'
 const KB_DOCUMENT_DELETE_API_PATH = '/api/rag/knowledge-bases/documents/delete'
@@ -141,6 +160,7 @@ const KB_DOCUMENT_BULK_DELETE_API_PATH =
   '/api/rag/knowledge-bases/documents/bulk-delete'
 const KNOWLEDGE_BASE_PAGE_SIZE = 8
 const DOCUMENT_PAGE_SIZE = 10
+const DEFAULT_KNOWLEDGE_PAGE: KnowledgePage = 'libraries'
 
 function getApiBaseUrl(): string {
   const envUrl = process.env.NEXT_PUBLIC_API_BASE_URL
@@ -158,6 +178,44 @@ function getApiBaseUrl(): string {
 
 function getApiUrl(path: string): string {
   return `${getApiBaseUrl()}${path}`
+}
+
+function normalizeKnowledgePage(value?: string): KnowledgePage {
+  switch (value) {
+    case 'library-detail':
+    case 'document-detail':
+    case 'users':
+      return value
+    default:
+      return 'libraries'
+  }
+}
+
+function getRouteHash(
+  viewMode: ViewMode,
+  knowledgePage: KnowledgePage = DEFAULT_KNOWLEDGE_PAGE
+): string {
+  return viewMode === 'chat' ? '#/chat' : `#/knowledge/${knowledgePage}`
+}
+
+function parseRouteHash(hash: string): {
+  viewMode: ViewMode
+  knowledgePage: KnowledgePage
+} {
+  const normalized = hash.replace(/^#/, '').replace(/^\/+/, '')
+  const parts = normalized.split('/').filter(Boolean)
+
+  if (parts[0] === 'knowledge') {
+    return {
+      viewMode: 'knowledge',
+      knowledgePage: normalizeKnowledgePage(parts[1]),
+    }
+  }
+
+  return {
+    viewMode: 'chat',
+    knowledgePage: DEFAULT_KNOWLEDGE_PAGE,
+  }
 }
 
 function generateSessionId(): string {
@@ -242,6 +300,8 @@ function getToolIcon(toolName: string): string {
 
 export default function ChatInterface() {
   const [viewMode, setViewMode] = useState<ViewMode>('chat')
+  const [knowledgePage, setKnowledgePage] =
+    useState<KnowledgePage>(DEFAULT_KNOWLEDGE_PAGE)
 
   const [messages, setMessages] = useState<Message[]>([])
   const [inputValue, setInputValue] = useState('')
@@ -275,9 +335,16 @@ export default function ChatInterface() {
   const [documentSearchInput, setDocumentSearchInput] = useState('')
   const [documentSearch, setDocumentSearch] = useState('')
   const [checkedDocumentIds, setCheckedDocumentIds] = useState<string[]>([])
+  const [selectedDocumentId, setSelectedDocumentId] = useState('')
+  const [selectedDocumentDetail, setSelectedDocumentDetail] =
+    useState<KnowledgeDocumentDetailResponse | null>(null)
+  const [documentChunkPage, setDocumentChunkPage] = useState(1)
+  const [loadingDocumentDetail, setLoadingDocumentDetail] = useState(false)
 
   const [knowledgeBaseName, setKnowledgeBaseName] = useState('')
   const [knowledgeBaseDescription, setKnowledgeBaseDescription] = useState('')
+  const [showCreateKnowledgeBaseModal, setShowCreateKnowledgeBaseModal] = useState(false)
+  const [savedUsers, setSavedUsers] = useState<string[]>([])
 
   const [managementError, setManagementError] = useState('')
   const [managementNotice, setManagementNotice] = useState('')
@@ -348,14 +415,84 @@ export default function ChatInterface() {
     const storedUserId = localStorage.getItem('rag_user_id') || 'demo-user'
     const storedSessionId =
       localStorage.getItem('rag_chat_session_id') || generateSessionId()
+    const storedUsers = localStorage.getItem('rag_saved_users')
+    const normalizedUsers = Array.from(
+      new Set(
+        [storedUserId, ...(storedUsers ? JSON.parse(storedUsers) : [])].filter(Boolean)
+      )
+    )
 
     localStorage.setItem('rag_user_id', storedUserId)
     localStorage.setItem('rag_chat_session_id', storedSessionId)
+    localStorage.setItem('rag_saved_users', JSON.stringify(normalizedUsers))
 
     setUserId(storedUserId)
     setUserIdDraft(storedUserId)
     setSessionId(storedSessionId)
+    setSavedUsers(normalizedUsers)
   }, [])
+
+  const navigateTo = useCallback(
+    (
+      nextViewMode: ViewMode,
+      nextKnowledgePage: KnowledgePage = DEFAULT_KNOWLEDGE_PAGE,
+      replace = false
+    ) => {
+      const safeKnowledgePage =
+        (
+          nextKnowledgePage === 'library-detail' ||
+          nextKnowledgePage === 'document-detail'
+        ) &&
+        !selectedKnowledgeBase
+          ? 'libraries'
+          : nextKnowledgePage
+
+      setViewMode(nextViewMode)
+      setKnowledgePage(safeKnowledgePage)
+
+      if (typeof window === 'undefined') return
+      const nextHash = getRouteHash(nextViewMode, safeKnowledgePage)
+      if (window.location.hash === nextHash) return
+
+      if (replace) {
+        window.history.replaceState(null, '', nextHash)
+      } else {
+        window.history.pushState(null, '', nextHash)
+      }
+    },
+    [selectedKnowledgeBase]
+  )
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const syncRoute = () => {
+      const route = parseRouteHash(window.location.hash)
+      const safeKnowledgePage =
+        (
+          route.knowledgePage === 'library-detail' ||
+          route.knowledgePage === 'document-detail'
+        ) &&
+        !selectedKnowledgeBase
+          ? 'libraries'
+          : route.knowledgePage
+      setViewMode(route.viewMode)
+      setKnowledgePage(safeKnowledgePage)
+
+      const expectedHash = getRouteHash(route.viewMode, safeKnowledgePage)
+      if (window.location.hash !== expectedHash) {
+        window.history.replaceState(null, '', expectedHash)
+      }
+    }
+
+    if (!window.location.hash) {
+      window.history.replaceState(null, '', getRouteHash('chat'))
+    }
+
+    syncRoute()
+    window.addEventListener('hashchange', syncRoute)
+    return () => window.removeEventListener('hashchange', syncRoute)
+  }, [selectedKnowledgeBase])
 
   useEffect(() => {
     scrollToBottom()
@@ -407,13 +544,7 @@ export default function ChatInterface() {
         setKnowledgeBases(result.items)
         setKnowledgeBaseTotal(result.total)
 
-        if (!selectedKnowledgeBaseId && result.items.length > 0) {
-          const first = result.items[0]
-          setSelectedKnowledgeBaseId(first.knowledge_base_id)
-          setSelectedKnowledgeBase(first)
-          setSelectedKnowledgeBaseName(first.name)
-          setSelectedKnowledgeBaseDescription(first.description)
-        } else if (selectedKnowledgeBaseId) {
+        if (selectedKnowledgeBaseId) {
           const matched = result.items.find(
             (item) => item.knowledge_base_id === selectedKnowledgeBaseId
           )
@@ -421,6 +552,9 @@ export default function ChatInterface() {
             setSelectedKnowledgeBase(matched)
             setSelectedKnowledgeBaseName(matched.name)
             setSelectedKnowledgeBaseDescription(matched.description)
+          } else {
+            setSelectedKnowledgeBaseId('')
+            setSelectedKnowledgeBase(null)
           }
         }
       } catch (error) {
@@ -507,6 +641,48 @@ export default function ChatInterface() {
     [documentPage, documentSearch]
   )
 
+  const loadDocumentDetail = useCallback(
+    async (
+      targetUserId: string,
+      knowledgeBaseId: string,
+      documentId: string,
+      page = documentChunkPage
+    ) => {
+      if (!knowledgeBaseId || !documentId) {
+        setSelectedDocumentDetail(null)
+        return
+      }
+
+      setLoadingDocumentDetail(true)
+      setManagementError('')
+      try {
+        const result = await fetchJson<KnowledgeDocumentDetailResponse>(
+          getApiUrl(KB_DOCUMENT_DETAIL_API_PATH),
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              user_id: targetUserId,
+              knowledge_base_id: knowledgeBaseId,
+              document_id: documentId,
+              page,
+              page_size: 8,
+            }),
+          }
+        )
+        setSelectedDocumentDetail(result)
+      } catch (error) {
+        setManagementError(
+          error instanceof Error ? error.message : 'Failed to load document detail.'
+        )
+        setSelectedDocumentDetail(null)
+      } finally {
+        setLoadingDocumentDetail(false)
+      }
+    },
+    [documentChunkPage]
+  )
+
   useEffect(() => {
     if (!userId) return
     void loadKnowledgeBases(userId, knowledgeBasePage, knowledgeBaseSearch)
@@ -527,6 +703,25 @@ export default function ChatInterface() {
     void loadDocuments(userId, selectedKnowledgeBaseId, documentPage, documentSearch)
   }, [documentPage, documentSearch, loadDocuments, selectedKnowledgeBaseId, userId])
 
+  useEffect(() => {
+    if (!selectedKnowledgeBaseId || !selectedDocumentId || knowledgePage !== 'document-detail') {
+      return
+    }
+    void loadDocumentDetail(
+      userId,
+      selectedKnowledgeBaseId,
+      selectedDocumentId,
+      documentChunkPage
+    )
+  }, [
+    documentChunkPage,
+    knowledgePage,
+    loadDocumentDetail,
+    selectedDocumentId,
+    selectedKnowledgeBaseId,
+    userId,
+  ])
+
   const selectKnowledgeBase = (knowledgeBase: KnowledgeBase) => {
     if (useKnowledgeBase && knowledgeBase.knowledge_base_id !== selectedKnowledgeBaseId) {
       clearChat()
@@ -539,6 +734,9 @@ export default function ChatInterface() {
     setDocumentPage(1)
     setDocumentSearch('')
     setDocumentSearchInput('')
+    setSelectedDocumentId('')
+    setSelectedDocumentDetail(null)
+    setDocumentChunkPage(1)
   }
 
   const handleKnowledgeBaseToggle = (checked: boolean) => {
@@ -552,12 +750,21 @@ export default function ChatInterface() {
     setUseKnowledgeBase(checked)
   }
 
-  const applyUserId = () => {
-    const normalizedUserId = userIdDraft.trim() || 'demo-user'
+  const persistSavedUsers = (nextUsers: string[]) => {
+    const normalized = Array.from(new Set(nextUsers.map((item) => item.trim()).filter(Boolean)))
+    setSavedUsers(normalized)
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('rag_saved_users', JSON.stringify(normalized))
+    }
+  }
+
+  const switchUser = (nextUserId: string) => {
+    const normalizedUserId = nextUserId.trim() || 'demo-user'
     if (typeof window !== 'undefined') {
       localStorage.setItem('rag_user_id', normalizedUserId)
     }
     setUserId(normalizedUserId)
+    setUserIdDraft(normalizedUserId)
     setKnowledgeBasePage(1)
     setKnowledgeBaseSearch('')
     setKnowledgeBaseSearchInput('')
@@ -566,13 +773,37 @@ export default function ChatInterface() {
     setDocumentSearchInput('')
     setSelectedKnowledgeBaseId('')
     setSelectedKnowledgeBase(null)
+    setSelectedDocumentId('')
+    setSelectedDocumentDetail(null)
     setKnowledgeBases([])
     setDocuments([])
     setCheckedKnowledgeBaseIds([])
     setCheckedDocumentIds([])
+    persistSavedUsers([normalizedUserId, ...savedUsers])
     setManagementNotice(`Active user switched to ${normalizedUserId}.`)
     setManagementError('')
     clearChat()
+    navigateTo('knowledge', 'users')
+  }
+
+  const applyUserId = () => {
+    switchUser(userIdDraft)
+  }
+
+  const removeSavedUser = (targetUserId: string) => {
+    const nextUsers = savedUsers.filter((item) => item !== targetUserId)
+    persistSavedUsers(nextUsers.length > 0 ? nextUsers : ['demo-user'])
+  }
+
+  const openKnowledgeBaseLibrary = (knowledgeBase: KnowledgeBase) => {
+    selectKnowledgeBase(knowledgeBase)
+    navigateTo('knowledge', 'library-detail')
+  }
+
+  const openDocumentDetail = (document: KnowledgeDocument) => {
+    setSelectedDocumentId(document.document_id)
+    setDocumentChunkPage(1)
+    navigateTo('knowledge', 'document-detail')
   }
 
   const createKnowledgeBase = async () => {
@@ -600,8 +831,10 @@ export default function ChatInterface() {
       setKnowledgeBasePage(1)
       await loadKnowledgeBases(userId, 1, knowledgeBaseSearch)
       selectKnowledgeBase(created)
+      navigateTo('knowledge', 'library-detail')
       setKnowledgeBaseName('')
       setKnowledgeBaseDescription('')
+      setShowCreateKnowledgeBaseModal(false)
       setManagementNotice(`Knowledge base "${created.name}" created.`)
     } catch (error) {
       setManagementError(
@@ -673,8 +906,11 @@ export default function ChatInterface() {
         setSelectedKnowledgeBase(null)
         setSelectedKnowledgeBaseName('')
         setSelectedKnowledgeBaseDescription('')
+        setSelectedDocumentId('')
+        setSelectedDocumentDetail(null)
         setDocuments([])
         setDocumentTotal(0)
+        navigateTo('knowledge', 'libraries')
       }
       setCheckedKnowledgeBaseIds((prev) => prev.filter((item) => item !== targetId))
       await loadKnowledgeBases(userId, knowledgeBasePage, knowledgeBaseSearch)
@@ -720,9 +956,12 @@ export default function ChatInterface() {
         setSelectedKnowledgeBase(null)
         setSelectedKnowledgeBaseName('')
         setSelectedKnowledgeBaseDescription('')
+        setSelectedDocumentId('')
+        setSelectedDocumentDetail(null)
         setDocuments([])
         setDocumentTotal(0)
         clearChat()
+        navigateTo('knowledge', 'libraries')
       }
       setCheckedKnowledgeBaseIds([])
       await loadKnowledgeBases(userId, knowledgeBasePage, knowledgeBaseSearch)
@@ -822,6 +1061,14 @@ export default function ChatInterface() {
         documentPage,
         documentSearch
       )
+      if (selectedDocumentId === document.document_id) {
+        await loadDocumentDetail(
+          userId,
+          selectedKnowledgeBase.knowledge_base_id,
+          document.document_id,
+          documentChunkPage
+        )
+      }
       setManagementNotice(`Document "${nextName}" updated.`)
     } catch (error) {
       setManagementError(
@@ -853,6 +1100,11 @@ export default function ChatInterface() {
         }),
       })
       setCheckedDocumentIds((prev) => prev.filter((item) => item !== targetId))
+      if (selectedDocumentId === targetId) {
+        setSelectedDocumentId('')
+        setSelectedDocumentDetail(null)
+        navigateTo('knowledge', 'library-detail')
+      }
       await loadKnowledgeBases(userId, knowledgeBasePage, knowledgeBaseSearch)
       await loadKnowledgeBaseDetail(userId, selectedKnowledgeBase.knowledge_base_id)
       await loadDocuments(
@@ -896,6 +1148,11 @@ export default function ChatInterface() {
         }
       )
       setCheckedDocumentIds([])
+      if (checkedDocumentIds.includes(selectedDocumentId)) {
+        setSelectedDocumentId('')
+        setSelectedDocumentDetail(null)
+        navigateTo('knowledge', 'library-detail')
+      }
       await loadKnowledgeBases(userId, knowledgeBasePage, knowledgeBaseSearch)
       await loadKnowledgeBaseDetail(userId, selectedKnowledgeBase.knowledge_base_id)
       await loadDocuments(
@@ -1075,7 +1332,7 @@ export default function ChatInterface() {
     const requestMode: RequestMode = useKnowledgeBase ? 'rag' : 'agent'
     if (requestMode === 'rag' && !selectedKnowledgeBase) {
       setManagementError('启用知识库后，必须先选择一个知识库。')
-      setViewMode('knowledge')
+      navigateTo('knowledge', 'libraries')
       return
     }
 
@@ -1294,6 +1551,565 @@ export default function ChatInterface() {
   const documentPageTotal = getPageTotal(documentTotal, DOCUMENT_PAGE_SIZE)
   const chatDisabled = useKnowledgeBase && !selectedKnowledgeBase
   const chatModeLabel = useKnowledgeBase ? '知识库 RAG' : '通用 Agent'
+  const visibleChunkTotal = knowledgeBases.reduce((sum, item) => sum + item.chunk_count, 0)
+  const documentChunkPageTotal = selectedDocumentDetail
+    ? getPageTotal(selectedDocumentDetail.total_chunks, selectedDocumentDetail.page_size)
+    : 1
+  const managementPageTitleMap: Record<KnowledgePage, string> = {
+    libraries: '知识库',
+    'library-detail': '知识库详情',
+    'document-detail': '知识详情',
+    users: '用户管理',
+  }
+  const managementPageDescriptionMap: Record<KnowledgePage, string> = {
+    libraries: '先从知识库卡片中选择目标知识库，再进入它的详情页和知识明细。',
+    'library-detail': '为当前知识库上传知识文件，管理已有知识，并进入知识详情页查看切片。',
+    'document-detail': '查看当前知识文档的切片明细、原始信息和删除操作。',
+    users: '单独管理用户身份，切换后会隔离知识库和对话数据。',
+  }
+  const renderKnowledgePage = () => {
+    if (knowledgePage === 'users') {
+      return (
+        <div className={styles.managementPageGrid}>
+          <section className={styles.managementCard}>
+            <div className={styles.managementHeader}>
+              <h3>当前用户</h3>
+              <span className={styles.managementMeta}>前端本地管理</span>
+            </div>
+            <div className={styles.managementMetaPanel}>
+              <span>当前用户: {userId}</span>
+              <span>知识库数量: {knowledgeBaseTotal}</span>
+              <span>最近切片总数: {visibleChunkTotal}</span>
+            </div>
+            <div className={styles.managementForm}>
+              <input
+                className={styles.managementInput}
+                value={userIdDraft}
+                onChange={(event) => setUserIdDraft(event.target.value)}
+                placeholder="输入或创建用户 ID"
+              />
+              <div className={styles.managementToolbar}>
+                <button className={styles.managementButton} onClick={applyUserId}>
+                  切换到该用户
+                </button>
+                <button
+                  className={styles.managementMinorButton}
+                  onClick={() => persistSavedUsers([userIdDraft, ...savedUsers])}
+                >
+                  保存到用户列表
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <section className={styles.managementCard}>
+            <div className={styles.managementHeader}>
+              <h3>用户列表</h3>
+              <span className={styles.managementMeta}>{savedUsers.length} 个</span>
+            </div>
+            <div className={styles.managementList}>
+              {savedUsers.length === 0 ? (
+                <div className={styles.managementEmpty}>暂无保存的用户</div>
+              ) : (
+                savedUsers.map((savedUser) => (
+                  <div
+                    key={savedUser}
+                    className={`${styles.managementListItemStatic} ${
+                      savedUser === userId ? styles.managementListItemActive : ''
+                    }`}
+                  >
+                    <div className={styles.managementListHeader}>
+                      <strong>{savedUser}</strong>
+                      <span>{savedUser === userId ? '当前用户' : '可切换'}</span>
+                    </div>
+                    <div className={styles.managementActionRow}>
+                      <button
+                        className={styles.managementMinorButton}
+                        onClick={() => switchUser(savedUser)}
+                      >
+                        使用该用户
+                      </button>
+                      <button
+                        className={styles.managementDangerMinorButton}
+                        onClick={() => removeSavedUser(savedUser)}
+                        disabled={savedUser === userId && savedUsers.length <= 1}
+                      >
+                        移除
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
+        </div>
+      )
+    }
+
+    if (knowledgePage === 'document-detail') {
+      return selectedDocumentDetail ? (
+        <div className={styles.managementPageGrid}>
+          <section className={styles.managementCard}>
+            <div className={styles.managementHeader}>
+              <h3>{selectedDocumentDetail.document.display_name}</h3>
+              <span className={styles.managementMeta}>
+                {loadingDocumentDetail ? '加载中...' : `${selectedDocumentDetail.total_chunks} 个切片`}
+              </span>
+            </div>
+            <div className={styles.managementMetaPanel}>
+              <span>所属知识库: {selectedDocumentDetail.knowledge_base.name}</span>
+              <span>原始文件: {selectedDocumentDetail.document.file_name}</span>
+              <span>文件大小: {Math.max(1, Math.round(selectedDocumentDetail.document.file_size / 1024))} KB</span>
+              <span>切片数量: {selectedDocumentDetail.document.chunk_count}</span>
+              <span>更新时间: {formatDateTime(selectedDocumentDetail.document.updated_at)}</span>
+            </div>
+            <div className={styles.managementToolbar}>
+              <button
+                className={styles.managementMinorButton}
+                onClick={() => navigateTo('knowledge', 'library-detail')}
+              >
+                返回知识库详情
+              </button>
+              <button
+                className={styles.managementMinorButton}
+                onClick={() => void renameDocument(selectedDocumentDetail.document)}
+              >
+                重命名
+              </button>
+              <button
+                className={styles.managementDangerButton}
+                onClick={() =>
+                  void deleteDocument(
+                    selectedDocumentDetail.document.document_id,
+                    selectedDocumentDetail.document.display_name
+                  )
+                }
+              >
+                删除该知识
+              </button>
+            </div>
+          </section>
+
+          <section className={styles.managementCard}>
+            <div className={styles.managementHeader}>
+              <h3>切片详情</h3>
+              <span className={styles.managementMeta}>
+                第 {documentChunkPage} / {documentChunkPageTotal} 页
+              </span>
+            </div>
+            <div className={styles.managementList}>
+              {selectedDocumentDetail.chunks.length === 0 ? (
+                <div className={styles.managementEmpty}>暂无切片数据</div>
+              ) : (
+                selectedDocumentDetail.chunks.map((chunk) => (
+                  <div key={chunk.chunk_id} className={styles.managementListItemStatic}>
+                    <div className={styles.managementListHeader}>
+                      <strong>切片 #{chunk.segment_id || '-'}</strong>
+                      <span>{chunk.chunk_id}</span>
+                    </div>
+                    <p className={styles.managementDescription}>{chunk.content}</p>
+                    <div className={styles.managementListMeta}>
+                      <span>页码: {String(chunk.metadata.pages_number ?? '-')}</span>
+                      <span>标题: {String(chunk.metadata.title ?? '-')}</span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+            <Pagination
+              page={documentChunkPage}
+              pageTotal={documentChunkPageTotal}
+              total={selectedDocumentDetail.total_chunks}
+              onPrev={() => setDocumentChunkPage((prev) => Math.max(1, prev - 1))}
+              onNext={() =>
+                setDocumentChunkPage((prev) => Math.min(documentChunkPageTotal, prev + 1))
+              }
+            />
+          </section>
+        </div>
+      ) : (
+        <div className={styles.managementEmptyState}>
+          <div className={styles.managementEmpty}>请先从知识库详情页选择一条知识</div>
+          <button
+            className={styles.managementButton}
+            onClick={() => navigateTo('knowledge', 'libraries')}
+          >
+            返回知识库
+          </button>
+        </div>
+      )
+    }
+
+    if (knowledgePage === 'library-detail') {
+      return selectedKnowledgeBase ? (
+        <div className={styles.managementWorkspace}>
+          <section className={styles.managementHero}>
+            <div className={styles.managementHeroCopy}>
+              <span className={styles.managementHeroEyebrow}>Knowledge Base</span>
+              <h2>{selectedKnowledgeBase.name}</h2>
+              <p>{selectedKnowledgeBase.description || '当前知识库暂无描述。'}</p>
+            </div>
+            <div className={styles.managementHeroActions}>
+              <button
+                className={styles.managementMinorButton}
+                onClick={() => navigateTo('knowledge', 'libraries')}
+              >
+                返回知识库列表
+              </button>
+              <button
+                className={styles.managementDangerButton}
+                onClick={() => void deleteKnowledgeBase()}
+              >
+                删除知识库
+              </button>
+            </div>
+          </section>
+
+          <div className={styles.managementSummaryGrid}>
+            <div className={styles.managementSummaryCard}>
+              <span className={styles.managementSummaryLabel}>文档总数</span>
+              <strong className={styles.managementSummaryValue}>
+                {selectedKnowledgeBase.document_count}
+              </strong>
+              <span className={styles.managementMeta}>当前知识库知识文档数量</span>
+            </div>
+            <div className={styles.managementSummaryCard}>
+              <span className={styles.managementSummaryLabel}>切片总数</span>
+              <strong className={styles.managementSummaryValue}>
+                {selectedKnowledgeBase.chunk_count}
+              </strong>
+              <span className={styles.managementMeta}>切片会写入 ES 图索引</span>
+            </div>
+            <div className={styles.managementSummaryCard}>
+              <span className={styles.managementSummaryLabel}>图前缀</span>
+              <strong className={styles.managementSummaryValue}>
+                {selectedKnowledgeBase.index_prefix}
+              </strong>
+              <span className={styles.managementMeta}>当前图检索命名空间</span>
+            </div>
+            <div className={styles.managementSummaryCard}>
+              <span className={styles.managementSummaryLabel}>更新时间</span>
+              <strong className={styles.managementSummaryValue}>
+                {formatDateTime(selectedKnowledgeBase.updated_at)}
+              </strong>
+              <span className={styles.managementMeta}>最近一次知识库更新时间</span>
+            </div>
+          </div>
+
+          <div className={styles.managementPageGrid}>
+            <section className={styles.managementCard}>
+              <div className={styles.managementHeader}>
+                <h3>知识库设置</h3>
+                <span className={styles.managementMeta}>名称与描述</span>
+              </div>
+              <div className={styles.managementForm}>
+                <input
+                  className={styles.managementInput}
+                  value={selectedKnowledgeBaseName}
+                  onChange={(event) => setSelectedKnowledgeBaseName(event.target.value)}
+                  placeholder="知识库名称"
+                />
+                <input
+                  className={styles.managementInput}
+                  value={selectedKnowledgeBaseDescription}
+                  onChange={(event) => setSelectedKnowledgeBaseDescription(event.target.value)}
+                  placeholder="知识库描述"
+                />
+                <div className={styles.managementToolbar}>
+                  <button
+                    className={styles.managementButton}
+                    disabled={savingKnowledgeBase}
+                    onClick={() => void saveKnowledgeBase()}
+                  >
+                    保存设置
+                  </button>
+                </div>
+              </div>
+
+              <div className={styles.managementDivider} />
+
+              <div className={styles.managementHeader}>
+                <h3>添加知识</h3>
+                <span className={styles.managementMeta}>支持 PDF / DOCX 等文件</span>
+              </div>
+              <div className={styles.managementToolbar}>
+                <button
+                  className={styles.managementButton}
+                  disabled={uploadingDocuments}
+                  onClick={openUploadDialog}
+                >
+                  {uploadingDocuments ? '上传中...' : '上传知识文件'}
+                </button>
+                <input
+                  ref={uploadInputRef}
+                  className={styles.hiddenUpload}
+                  type="file"
+                  multiple
+                  onChange={handleUploadFiles}
+                />
+              </div>
+
+              <div className={styles.managementMetaPanel}>
+                <span>Passage: {selectedKnowledgeBase.passage_index}</span>
+                <span>Entity: {selectedKnowledgeBase.entity_index}</span>
+                <span>Relation: {selectedKnowledgeBase.relation_index}</span>
+              </div>
+            </section>
+
+            <section className={styles.managementCard}>
+              <div className={styles.managementHeader}>
+                <h3>知识列表</h3>
+                <span className={styles.managementMeta}>
+                  {loadingDocuments ? '加载中...' : `共 ${documentTotal} 条`}
+                </span>
+              </div>
+              <div className={styles.managementToolbar}>
+                <div className={styles.managementSearchGroup}>
+                  <input
+                    className={styles.managementInput}
+                    value={documentSearchInput}
+                    onChange={(event) => setDocumentSearchInput(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        setDocumentPage(1)
+                        setDocumentSearch(documentSearchInput.trim())
+                      }
+                    }}
+                    placeholder="搜索知识文件"
+                  />
+                  <button
+                    className={styles.managementButton}
+                    onClick={() => {
+                      setDocumentPage(1)
+                      setDocumentSearch(documentSearchInput.trim())
+                    }}
+                  >
+                    搜索
+                  </button>
+                </div>
+                <button
+                  className={styles.managementDangerButton}
+                  disabled={checkedDocumentIds.length === 0 || deletingBulk}
+                  onClick={() => void bulkDeleteDocuments()}
+                >
+                  批量删除
+                </button>
+              </div>
+
+              <div className={styles.managementCardGrid}>
+                {documents.length === 0 ? (
+                  <div className={styles.managementEmpty}>当前知识库还没有知识文档</div>
+                ) : (
+                  documents.map((document) => (
+                    <div key={document.document_id} className={styles.managementTileCard}>
+                      <div className={styles.managementListHeader}>
+                        <label
+                          className={styles.managementCheckbox}
+                          onClick={(event) =>
+                            toggleDocumentChecked(
+                              document.document_id,
+                              event as unknown as MouseEvent<
+                                HTMLButtonElement | HTMLInputElement
+                              >
+                            )
+                          }
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checkedDocumentIds.includes(document.document_id)}
+                            onChange={() => undefined}
+                          />
+                        </label>
+                        <strong>{document.display_name}</strong>
+                        <span>{document.chunk_count} 切片</span>
+                      </div>
+                      <p className={styles.managementDescription}>
+                        原始文件: {document.file_name}
+                      </p>
+                      <div className={styles.managementListMeta}>
+                        <span>{Math.max(1, Math.round(document.file_size / 1024))} KB</span>
+                        <span>{formatDateTime(document.updated_at)}</span>
+                      </div>
+                      <div className={styles.managementActionRow}>
+                        <button
+                          className={styles.managementButton}
+                          onClick={() => openDocumentDetail(document)}
+                        >
+                          查看详情
+                        </button>
+                        <button
+                          className={styles.managementMinorButton}
+                          onClick={() => void renameDocument(document)}
+                        >
+                          重命名
+                        </button>
+                        <button
+                          className={styles.managementDangerMinorButton}
+                          onClick={() =>
+                            void deleteDocument(document.document_id, document.display_name)
+                          }
+                        >
+                          删除
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+              <Pagination
+                page={documentPage}
+                pageTotal={documentPageTotal}
+                total={documentTotal}
+                onPrev={() => setDocumentPage((prev) => Math.max(1, prev - 1))}
+                onNext={() =>
+                  setDocumentPage((prev) => Math.min(documentPageTotal, prev + 1))
+                }
+              />
+            </section>
+          </div>
+        </div>
+      ) : (
+        <div className={styles.managementEmptyState}>
+          <div className={styles.managementEmpty}>请先从知识库列表选择一个知识库</div>
+          <button
+            className={styles.managementButton}
+            onClick={() => navigateTo('knowledge', 'libraries')}
+          >
+            返回知识库列表
+          </button>
+        </div>
+      )
+    }
+
+    return (
+      <div className={styles.managementWorkspace}>
+        <section className={styles.managementHero}>
+          <div className={styles.managementHeroCopy}>
+            <span className={styles.managementHeroEyebrow}>Knowledge Bases</span>
+            <h2>按知识库管理你的知识</h2>
+            <p>这里展示当前用户下的所有知识库。点击卡片进入详情页，在详情页中继续添加知识文件和查看具体切片。</p>
+          </div>
+        </section>
+
+        <div className={styles.managementToolbar}>
+          <div className={styles.managementSearchGroup}>
+            <input
+              className={styles.managementInput}
+              value={knowledgeBaseSearchInput}
+              onChange={(event) => setKnowledgeBaseSearchInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  setKnowledgeBasePage(1)
+                  setKnowledgeBaseSearch(knowledgeBaseSearchInput.trim())
+                }
+              }}
+              placeholder="搜索知识库名称或描述"
+            />
+            <button
+              className={styles.managementButton}
+              onClick={() => {
+                setKnowledgeBasePage(1)
+                setKnowledgeBaseSearch(knowledgeBaseSearchInput.trim())
+              }}
+            >
+              搜索
+            </button>
+          </div>
+          <button
+            className={styles.managementDangerButton}
+            disabled={checkedKnowledgeBaseIds.length === 0 || deletingBulk}
+            onClick={() => void bulkDeleteKnowledgeBases()}
+          >
+            批量删除
+          </button>
+        </div>
+
+        <div className={styles.managementLibraryGrid}>
+          <button
+            type="button"
+            className={styles.managementCreateCard}
+            onClick={() => setShowCreateKnowledgeBaseModal(true)}
+          >
+            <span className={styles.managementCreateIcon}>+</span>
+            <strong>新建知识库</strong>
+            <span>点击后填写知识库名称和描述</span>
+          </button>
+
+          {knowledgeBases.length === 0 ? (
+            <div className={styles.managementEmpty}>暂无知识库</div>
+          ) : (
+            knowledgeBases.map((knowledgeBase) => (
+              <div
+                key={knowledgeBase.knowledge_base_id}
+                className={`${styles.managementLibraryCard} ${
+                  selectedKnowledgeBaseId === knowledgeBase.knowledge_base_id
+                    ? styles.managementListItemActive
+                    : ''
+                }`}
+              >
+                <div className={styles.managementListHeader}>
+                  <label
+                    className={styles.managementCheckbox}
+                    onClick={(event) =>
+                      toggleKnowledgeBaseChecked(
+                        knowledgeBase.knowledge_base_id,
+                        event as unknown as MouseEvent<
+                          HTMLButtonElement | HTMLInputElement
+                        >
+                      )
+                    }
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checkedKnowledgeBaseIds.includes(
+                        knowledgeBase.knowledge_base_id
+                      )}
+                      onChange={() => undefined}
+                    />
+                  </label>
+                  <strong>{knowledgeBase.name}</strong>
+                  <span>{knowledgeBase.document_count} 文档</span>
+                </div>
+                <p className={styles.managementDescription}>
+                  {knowledgeBase.description || '暂无描述'}
+                </p>
+                <div className={styles.managementListMeta}>
+                  <span>{knowledgeBase.chunk_count} 切片</span>
+                  <span>{formatDateTime(knowledgeBase.updated_at)}</span>
+                </div>
+                <div className={styles.managementActionRow}>
+                  <button
+                    className={styles.managementButton}
+                    onClick={() => openKnowledgeBaseLibrary(knowledgeBase)}
+                  >
+                    进入知识库
+                  </button>
+                  <button
+                    className={styles.managementDangerMinorButton}
+                    onClick={() =>
+                      void deleteKnowledgeBase(knowledgeBase.knowledge_base_id)
+                    }
+                  >
+                    删除
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        <Pagination
+          page={knowledgeBasePage}
+          pageTotal={knowledgeBasePageTotal}
+          total={knowledgeBaseTotal}
+          onPrev={() => setKnowledgeBasePage((prev) => Math.max(1, prev - 1))}
+          onNext={() =>
+            setKnowledgeBasePage((prev) => Math.min(knowledgeBasePageTotal, prev + 1))
+          }
+        />
+      </div>
+    )
+  }
 
   return (
     <div className={styles.container}>
@@ -1313,61 +2129,34 @@ export default function ChatInterface() {
       <div className={styles.workspaceLayout}>
         <aside className={styles.sidebarNav}>
           <div className={styles.sidebarPanel}>
-            <div className={styles.sidebarBlock}>
-              <span className={styles.sidebarTitle}>导航</span>
-              <button
-                className={`${styles.sidebarButton} ${
-                  viewMode === 'chat' ? styles.sidebarButtonActive : ''
-                }`}
-                onClick={() => setViewMode('chat')}
-              >
-                聊天
-              </button>
-              <button
-                className={`${styles.sidebarButton} ${
-                  viewMode === 'knowledge' ? styles.sidebarButtonActive : ''
-                }`}
-                onClick={() => setViewMode('knowledge')}
-              >
-                知识管理
-              </button>
-            </div>
-
-            <div className={styles.sidebarBlock}>
-              <span className={styles.sidebarTitle}>用户</span>
-              <input
-                className={styles.sidebarInput}
-                value={userIdDraft}
-                onChange={(event) => setUserIdDraft(event.target.value)}
-                placeholder="用户 ID"
-              />
-              <button className={styles.sidebarAction} onClick={applyUserId}>
-                应用用户
-              </button>
-            </div>
-
-            <div className={styles.sidebarBlock}>
-              <span className={styles.sidebarTitle}>对话模式</span>
-              <div className={styles.sidebarCard}>
-                <strong>{chatModeLabel}</strong>
-                <span>{useKnowledgeBase ? '已启用知识库检索' : '当前直接调用 Agent'}</span>
-              </div>
-            </div>
-
-            <div className={styles.sidebarBlock}>
-              <span className={styles.sidebarTitle}>当前知识库</span>
-              {selectedKnowledgeBase ? (
-                <div className={styles.sidebarCard}>
-                  <strong>{selectedKnowledgeBase.name}</strong>
-                  <span>{selectedKnowledgeBase.document_count} 个文档</span>
-                  <span>{selectedKnowledgeBase.chunk_count} 个切片</span>
-                </div>
-              ) : (
-                <div className={styles.sidebarEmpty}>
-                  {useKnowledgeBase ? '请先选择知识库' : '未启用知识库'}
-                </div>
-              )}
-            </div>
+            <button
+              className={`${styles.sidebarButton} ${
+                viewMode === 'chat' ? styles.sidebarButtonActive : ''
+              }`}
+              onClick={() => navigateTo('chat')}
+            >
+              聊天
+            </button>
+            <button
+              className={`${styles.sidebarButton} ${
+                viewMode === 'knowledge' && knowledgePage !== 'users'
+                  ? styles.sidebarButtonActive
+                  : ''
+              }`}
+              onClick={() => navigateTo('knowledge', 'libraries')}
+            >
+              知识库
+            </button>
+            <button
+              className={`${styles.sidebarButton} ${
+                viewMode === 'knowledge' && knowledgePage === 'users'
+                  ? styles.sidebarButtonActive
+                  : ''
+              }`}
+              onClick={() => navigateTo('knowledge', 'users')}
+            >
+              用户管理
+            </button>
           </div>
         </aside>
 
@@ -1476,7 +2265,7 @@ export default function ChatInterface() {
                       >
                         提取实体关系
                       </button>
-                      <button onClick={() => setViewMode('knowledge')}>
+                      <button onClick={() => navigateTo('knowledge', 'libraries')}>
                         进入知识管理
                       </button>
                     </div>
@@ -1624,7 +2413,7 @@ export default function ChatInterface() {
                       </span>
                       <button
                         className={styles.chatKnowledgeAction}
-                        onClick={() => setViewMode('knowledge')}
+                        onClick={() => navigateTo('knowledge', 'libraries')}
                       >
                         {selectedKnowledgeBase ? '切换知识库' : '选择知识库'}
                       </button>
@@ -1656,324 +2445,75 @@ export default function ChatInterface() {
                   <div className={styles.managementError}>{managementError}</div>
                 )}
               </div>
-
-              <div className={styles.managementGrid}>
-                <section className={styles.managementCard}>
-                  <div className={styles.managementHeader}>
-                    <h3>知识库管理</h3>
-                    <span className={styles.managementMeta}>
-                      {loadingKnowledgeBases ? '加载中...' : `共 ${knowledgeBaseTotal} 条`}
-                    </span>
-                  </div>
-
-                  <div className={styles.managementToolbar}>
-                    <div className={styles.managementSearchGroup}>
-                      <input
-                        className={styles.managementInput}
-                        value={knowledgeBaseSearchInput}
-                        onChange={(event) => setKnowledgeBaseSearchInput(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter') {
-                            setKnowledgeBasePage(1)
-                            setKnowledgeBaseSearch(knowledgeBaseSearchInput.trim())
-                          }
-                        }}
-                        placeholder="搜索知识库名称或描述"
-                      />
-                      <button
-                        className={styles.managementButton}
-                        onClick={() => {
-                          setKnowledgeBasePage(1)
-                          setKnowledgeBaseSearch(knowledgeBaseSearchInput.trim())
-                        }}
-                      >
-                        搜索
-                      </button>
-                    </div>
-                    <button
-                      className={styles.managementDangerButton}
-                      disabled={checkedKnowledgeBaseIds.length === 0 || deletingBulk}
-                      onClick={() => void bulkDeleteKnowledgeBases()}
-                    >
-                      批量删除
-                    </button>
-                  </div>
-
-                  <div className={styles.managementForm}>
-                    <input
-                      className={styles.managementInput}
-                      value={knowledgeBaseName}
-                      onChange={(event) => setKnowledgeBaseName(event.target.value)}
-                      placeholder="新建知识库名称"
-                    />
-                    <input
-                      className={styles.managementInput}
-                      value={knowledgeBaseDescription}
-                      onChange={(event) => setKnowledgeBaseDescription(event.target.value)}
-                      placeholder="知识库描述"
-                    />
-                    <button
-                      className={styles.managementButton}
-                      disabled={savingKnowledgeBase}
-                      onClick={() => void createKnowledgeBase()}
-                    >
-                      创建知识库
-                    </button>
-                  </div>
-
-                  <div className={styles.managementList}>
-                    {knowledgeBases.length === 0 ? (
-                      <div className={styles.managementEmpty}>暂无知识库</div>
-                    ) : (
-                      knowledgeBases.map((knowledgeBase) => (
-                        <button
-                          key={knowledgeBase.knowledge_base_id}
-                          className={`${styles.managementListItem} ${
-                            selectedKnowledgeBaseId === knowledgeBase.knowledge_base_id
-                              ? styles.managementListItemActive
-                              : ''
-                          }`}
-                          onClick={() => selectKnowledgeBase(knowledgeBase)}
-                        >
-                          <div className={styles.managementListHeader}>
-                            <label
-                              className={styles.managementCheckbox}
-                              onClick={(event) =>
-                                toggleKnowledgeBaseChecked(
-                                  knowledgeBase.knowledge_base_id,
-                                  event as unknown as MouseEvent<
-                                    HTMLButtonElement | HTMLInputElement
-                                  >
-                                )
-                              }
-                            >
-                              <input
-                                type="checkbox"
-                                checked={checkedKnowledgeBaseIds.includes(
-                                  knowledgeBase.knowledge_base_id
-                                )}
-                                onChange={() => undefined}
-                              />
-                            </label>
-                            <strong>{knowledgeBase.name}</strong>
-                            <span>{knowledgeBase.document_count} 文档</span>
-                          </div>
-                          <p className={styles.managementDescription}>
-                            {knowledgeBase.description || '无描述'}
-                          </p>
-                          <div className={styles.managementListMeta}>
-                            <span>{knowledgeBase.chunk_count} 切片</span>
-                            <span>{formatDateTime(knowledgeBase.updated_at)}</span>
-                          </div>
-                        </button>
-                      ))
-                    )}
-                  </div>
-
-                  <Pagination
-                    page={knowledgeBasePage}
-                    pageTotal={knowledgeBasePageTotal}
-                    total={knowledgeBaseTotal}
-                    onPrev={() => setKnowledgeBasePage((prev) => Math.max(1, prev - 1))}
-                    onNext={() =>
-                      setKnowledgeBasePage((prev) =>
-                        Math.min(knowledgeBasePageTotal, prev + 1)
-                      )
-                    }
-                  />
-                </section>
-
-                <section className={styles.managementCard}>
-                  <div className={styles.managementHeader}>
-                    <h3>知识库详情</h3>
-                    <span className={styles.managementMeta}>
-                      {loadingKnowledgeBaseDetail ? '加载中...' : ''}
-                    </span>
-                  </div>
-
-                  {selectedKnowledgeBase ? (
-                    <>
-                      <div className={styles.managementForm}>
-                        <input
-                          className={styles.managementInput}
-                          value={selectedKnowledgeBaseName}
-                          onChange={(event) =>
-                            setSelectedKnowledgeBaseName(event.target.value)
-                          }
-                          placeholder="知识库名称"
-                        />
-                        <input
-                          className={styles.managementInput}
-                          value={selectedKnowledgeBaseDescription}
-                          onChange={(event) =>
-                            setSelectedKnowledgeBaseDescription(event.target.value)
-                          }
-                          placeholder="知识库描述"
-                        />
-                      </div>
-                      <div className={styles.managementMetaPanel}>
-                        <span>图前缀: {selectedKnowledgeBase.index_prefix}</span>
-                        <span>Passage: {selectedKnowledgeBase.passage_index}</span>
-                        <span>文档数: {selectedKnowledgeBase.document_count}</span>
-                        <span>切片数: {selectedKnowledgeBase.chunk_count}</span>
-                      </div>
-                      <div className={styles.managementToolbar}>
-                        <button
-                          className={styles.managementButton}
-                          disabled={savingKnowledgeBase}
-                          onClick={() => void saveKnowledgeBase()}
-                        >
-                          保存
-                        </button>
-                        <button
-                          className={styles.managementDangerButton}
-                          disabled={savingKnowledgeBase}
-                          onClick={() => void deleteKnowledgeBase()}
-                        >
-                          删除当前知识库
-                        </button>
-                      </div>
-
-                      <div className={styles.managementDivider} />
-
-                      <div className={styles.managementHeader}>
-                        <h3>文档管理</h3>
-                        <span className={styles.managementMeta}>
-                          {loadingDocuments ? '加载中...' : `共 ${documentTotal} 条`}
-                        </span>
-                      </div>
-
-                      <div className={styles.managementToolbar}>
-                        <div className={styles.managementSearchGroup}>
-                          <input
-                            className={styles.managementInput}
-                            value={documentSearchInput}
-                            onChange={(event) => setDocumentSearchInput(event.target.value)}
-                            onKeyDown={(event) => {
-                              if (event.key === 'Enter') {
-                                setDocumentPage(1)
-                                setDocumentSearch(documentSearchInput.trim())
-                              }
-                            }}
-                            placeholder="搜索文档名"
-                          />
-                          <button
-                            className={styles.managementButton}
-                            onClick={() => {
-                              setDocumentPage(1)
-                              setDocumentSearch(documentSearchInput.trim())
-                            }}
-                          >
-                            搜索
-                          </button>
-                        </div>
-                        <div className={styles.managementActionGroup}>
-                          <button
-                            className={styles.managementButton}
-                            disabled={uploadingDocuments}
-                            onClick={openUploadDialog}
-                          >
-                            {uploadingDocuments ? '上传中...' : '上传文档'}
-                          </button>
-                          <button
-                            className={styles.managementDangerButton}
-                            disabled={checkedDocumentIds.length === 0 || deletingBulk}
-                            onClick={() => void bulkDeleteDocuments()}
-                          >
-                            批量删除
-                          </button>
-                          <input
-                            ref={uploadInputRef}
-                            className={styles.hiddenUpload}
-                            type="file"
-                            multiple
-                            onChange={handleUploadFiles}
-                          />
-                        </div>
-                      </div>
-
-                      <div className={styles.managementList}>
-                        {documents.length === 0 ? (
-                          <div className={styles.managementEmpty}>暂无文档</div>
-                        ) : (
-                          documents.map((document) => (
-                            <div
-                              key={document.document_id}
-                              className={styles.managementListItemStatic}
-                            >
-                              <div className={styles.managementListHeader}>
-                                <label
-                                  className={styles.managementCheckbox}
-                                  onClick={(event) =>
-                                    toggleDocumentChecked(
-                                      document.document_id,
-                                      event as unknown as MouseEvent<
-                                        HTMLButtonElement | HTMLInputElement
-                                      >
-                                    )
-                                  }
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={checkedDocumentIds.includes(document.document_id)}
-                                    onChange={() => undefined}
-                                  />
-                                </label>
-                                <strong>{document.display_name}</strong>
-                                <span>{document.chunk_count} 切片</span>
-                              </div>
-                              <p className={styles.managementDescription}>
-                                原始文件: {document.file_name}
-                              </p>
-                              <div className={styles.managementListMeta}>
-                                <span>{Math.max(1, Math.round(document.file_size / 1024))} KB</span>
-                                <span>{formatDateTime(document.updated_at)}</span>
-                              </div>
-                              <div className={styles.managementActionRow}>
-                                <button
-                                  className={styles.managementMinorButton}
-                                  onClick={() => void renameDocument(document)}
-                                >
-                                  重命名
-                                </button>
-                                <button
-                                  className={styles.managementDangerMinorButton}
-                                  onClick={() =>
-                                    void deleteDocument(
-                                      document.document_id,
-                                      document.display_name
-                                    )
-                                  }
-                                >
-                                  删除
-                                </button>
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
-
-                      <Pagination
-                        page={documentPage}
-                        pageTotal={documentPageTotal}
-                        total={documentTotal}
-                        onPrev={() => setDocumentPage((prev) => Math.max(1, prev - 1))}
-                        onNext={() =>
-                          setDocumentPage((prev) =>
-                            Math.min(documentPageTotal, prev + 1)
-                          )
-                        }
-                      />
-                    </>
-                  ) : (
-                    <div className={styles.managementEmpty}>请先选择一个知识库</div>
-                  )}
-                </section>
+              <div className={styles.managementTopbar}>
+                <div className={styles.managementRouteInfo}>
+                  <span className={styles.managementBreadcrumb}>
+                    知识管理 / {managementPageTitleMap[knowledgePage]}
+                  </span>
+                  <h2>{managementPageTitleMap[knowledgePage]}</h2>
+                  <p>{managementPageDescriptionMap[knowledgePage]}</p>
+                </div>
               </div>
+
+              {renderKnowledgePage()}
             </div>
           )}
         </main>
       </div>
+
+      {showCreateKnowledgeBaseModal && (
+        <div
+          className={styles.managementModalOverlay}
+          onClick={() => setShowCreateKnowledgeBaseModal(false)}
+        >
+          <div
+            className={styles.managementModal}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className={styles.managementHeader}>
+              <h3>新建知识库</h3>
+              <button
+                type="button"
+                className={styles.managementModalClose}
+                onClick={() => setShowCreateKnowledgeBaseModal(false)}
+              >
+                关闭
+              </button>
+            </div>
+            <div className={styles.managementForm}>
+              <input
+                className={styles.managementInput}
+                value={knowledgeBaseName}
+                onChange={(event) => setKnowledgeBaseName(event.target.value)}
+                placeholder="知识库名称"
+                autoFocus
+              />
+              <input
+                className={styles.managementInput}
+                value={knowledgeBaseDescription}
+                onChange={(event) => setKnowledgeBaseDescription(event.target.value)}
+                placeholder="知识库描述"
+              />
+              <div className={styles.managementToolbar}>
+                <button
+                  className={styles.managementButton}
+                  disabled={savingKnowledgeBase}
+                  onClick={() => void createKnowledgeBase()}
+                >
+                  创建知识库
+                </button>
+                <button
+                  type="button"
+                  className={styles.managementMinorButton}
+                  onClick={() => setShowCreateKnowledgeBaseModal(false)}
+                >
+                  取消
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
