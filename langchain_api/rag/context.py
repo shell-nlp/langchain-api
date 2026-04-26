@@ -6,6 +6,8 @@ class AgentContext(BaseModel):
 
     # 用户ID，用于标识用户
     user_id: str = Field("default", description="用户ID")
+    # ES 检索索引名
+    index_name: str = Field("236", description="ES 检索索引名")
     # 是否启用联网搜索
     internet_search: bool = Field(False, description="是否启用联网搜索")
     # 是否启用深度思考

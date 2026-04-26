@@ -9,10 +9,11 @@ from langchain.agents.middleware import AgentMiddleware
 from langchain_core.documents import Document
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import BaseMessage, SystemMessage
-from langchain_core.vectorstores import VectorStore
 from langchain_deepseek import ChatDeepSeek
 from langgraph.runtime import Runtime
 from loguru import logger
+
+from langchain_api.rag.elastic_utils import Elasticsearch
 
 RAG_SYSTEM_PROMPT = """<角色>您是一个精通文档引用的问答专家，能够精准依据来源内容构建回答。</角色>
 <任务>基于提供的内容和用户的问题,撰写一篇详细完备的最终回答.</任务>
@@ -205,31 +206,38 @@ class RAGMiddleware(AgentMiddleware[CustomState]):
 
     def __init__(
         self,
-        vector_store: VectorStore,
+        es: Elasticsearch,
         rewrite_query: bool = False,
         model: BaseChatModel = None,
         retrieve_router: bool = False,
     ):
-        """RAG中间件，用于边界的实现RAG系统
+        """RAG 中间件，使用 Elasticsearch 执行检索。
 
         Parameters
         ----------
-        vector_store : VectorStore
-            向量数据库，支持多种向量数据库
+        es : Elasticsearch
+            Elasticsearch 检索封装实例。
         rewrite_query : bool, optional
-            是否重新query, by default False
+            是否重写 query，默认 False。
         model : BaseChatModel, optional
-            当需要重写query时，需要传入模型, by default None
+            当需要重写 query 或做检索路由时使用的模型，默认 None。
         retrieve_router : bool, optional
-            用于决定是否智能判断是否使用使用RAG, by default False
+            是否启用检索路由判断，默认 False。
 
         """
-        self.vector_store = vector_store
+        self.es = es
         self.rewrite_query = rewrite_query
         self.model: ChatDeepSeek = model
         self.retrieve_router = retrieve_router
         if rewrite_query and not self.model:
             raise AssertionError("当 rewrite_query 为 True 时，model 不能为空")
+
+    def _get_index_name(self, runtime: Runtime) -> str:
+        context = runtime.context
+        index_name = getattr(context, "index_name", None) if context else None
+        if not index_name:
+            raise ValueError("runtime.context.index_name is required")
+        return index_name
 
     def _get_rewrite_query(self, messages: List[BaseMessage]) -> str:
         """用户根据历史消息重写query
@@ -291,23 +299,38 @@ class RAGMiddleware(AgentMiddleware[CustomState]):
             router = value["路由"]
         return router
 
-    def _get_retrieve_result(self, query: str, k: int = 3) -> List[Document]:
-        """根据query检索结果
+    def _get_retrieve_result(
+        self, query: str, index_name: str, k: int = 3
+    ) -> List[tuple[Document, float | None]]:
+        """根据 query 检索结果。
 
         Parameters
         ----------
         query : str
-            用户query
+            用户 query
+        index_name : str
+            ES 检索索引名
         k : int, optional
-            检索结果数量, by default 3
+            检索结果数量，默认 3。
 
         Returns
         -------
-        List[Document]
-            检索结果
+        List[tuple[Document, float | None]]
+            检索结果及分数
         """
         try:
-            results = self.vector_store.similarity_search_with_score(query, k=k)
+            hits = self.es.retrieve(query=query, k=k, index_name=index_name)
+            results = []
+            for item in hits:
+                results.append(
+                    (
+                        Document(
+                            page_content=item.get("content", ""),
+                            metadata=item.get("metadata", {}),
+                        ),
+                        item.get("score"),
+                    )
+                )
         except Exception as e:
             logger.error(f"检索失败：{e}")
             results = []
@@ -324,11 +347,14 @@ class RAGMiddleware(AgentMiddleware[CustomState]):
 如果问题中提供的时间超过当前的时间，必须指出问题中的时间尚未到来。
 </当前的时间>"""
         if router == "RAG":
+            index_name = self._get_index_name(runtime)
             # 改写问题
             query = self._get_rewrite_query(messages)
             logger.info(f"用于检索的问题：{query}")
             # 检索结果
-            retrieved_docs = self._get_retrieve_result(query, k=3)
+            retrieved_docs = self._get_retrieve_result(
+                query=query, index_name=index_name, k=3
+            )
             context = ""
             docs = []
             for idx, (doc, socre) in enumerate(retrieved_docs, start=1):

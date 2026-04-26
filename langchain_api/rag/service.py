@@ -7,7 +7,7 @@ from langchain_api.api import add_general_api_endpoint
 from langchain_api.middleware import RAGMiddleware
 from langchain_api.middleware.common import BusinessMiddleware
 from langchain_api.rag.context import AgentContext
-from langchain_api.rag.retriever import vector_store
+from langchain_api.rag.retriever import es_retriever
 from langchain_api.settings import settings
 
 
@@ -28,7 +28,7 @@ def create_rag_agent():
         model=model,
         middleware=[
             RAGMiddleware(
-                vector_store=vector_store,
+                es=es_retriever,
                 rewrite_query=True,
                 model=rewrite_model,
                 retrieve_router=True,
