@@ -6,8 +6,8 @@ from langchain_elasticsearch import (
 )
 
 from langchain_api.settings import settings
-from langchain_api.elastic_graph_rag import ElasticGraphRAG
-from langchain_api.elastic_utils import Elasticsearch
+from langchain_api.rag.elastic_graph_rag import ElasticGraphRAG
+from langchain_api.rag.elastic_utils import Elasticsearch
 from langchain_api.utils import get_embedding_model
 
 embeddings = get_embedding_model()

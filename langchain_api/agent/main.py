@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from langchain_api.agent.agent import Agent
 from langchain_api.agent.context import AgentContext
 from langchain_api.constant import root_dir
-from langchain_api.endpoint import add_general_api_endpoint
+from langchain_api.api import add_general_api_endpoint
 from langchain_api.patch.langchain import patch_langchain
 
 try:

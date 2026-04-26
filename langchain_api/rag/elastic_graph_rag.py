@@ -7,7 +7,7 @@ from langchain_core.documents import Document
 from loguru import logger
 from pydantic import BaseModel, Field
 
-from langchain_api.elastic_utils import Elasticsearch
+from langchain_api.rag.elastic_utils import Elasticsearch
 from langchain_api.utils import get_chat_model
 
 TRIPLET_PROMPT = """从文本中抽取知识图谱三元组。
