@@ -2,6 +2,11 @@ import copy
 import io
 import os
 import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import unicodedata
 import uuid
 from dataclasses import dataclass
 from importlib import import_module
@@ -11,13 +16,13 @@ from typing import Any, Iterable, List, Optional, Protocol
 import fitz
 import pandas as pd
 import pdfplumber
-import PIL
 import PyPDF2
 from langchain_core.documents import Document
 from langchain_text_splitters.character import (
     RecursiveCharacterTextSplitter,
 )
 from loguru import logger
+from PIL import Image, UnidentifiedImageError
 
 from langchain_api.constant import workspace_path
 
@@ -560,7 +565,7 @@ def upload_file_to_mino(
 ):
     del length
     if s3_client is None:
-        logger.debug("Skip object storage upload because no S3 client is available.")
+        logger.debug("当前无 S3 客户端，跳过对象存储上传。")
         return
 
     try:
@@ -572,14 +577,14 @@ def upload_file_to_mino(
             error_code = str(error.get("Code", ""))
             if error_code in {"404", "NoSuchBucket"}:
                 s3_client.create_bucket(Bucket=bucket_name)
-                logger.info(f"Created bucket '{bucket_name}'")
+                logger.info(f"已创建对象存储 bucket：{bucket_name}")
             else:
                 raise
 
         file_data.seek(0)
         s3_client.upload_fileobj(file_data, bucket_name, object_name)
     except Exception as exc:
-        logger.error(f"Object storage upload failed: {exc}")
+        logger.error(f"对象存储上传失败：{exc}")
 
 
 @dataclass(slots=True)
@@ -587,6 +592,8 @@ class LoadedPDFFile:
     file_bytes: bytes
     file_name: str
     upload_client: Any | None = None
+    text_content: str | None = None
+    converted_pdf_temp_path: str | None = None
 
 
 class PDFFileReader(Protocol):
@@ -626,7 +633,7 @@ class LocalDirectoryPDFReader:
             bucket_name=bucket_name, file_path=file_path
         ):
             if candidate.is_file():
-                logger.info(f"Loading PDF from local file: {candidate}")
+                logger.info(f"从本地路径加载文件：{candidate}")
                 return LoadedPDFFile(
                     file_bytes=candidate.read_bytes(),
                     file_name=candidate.name,
@@ -640,8 +647,7 @@ class LocalDirectoryPDFReader:
             )
         )
         raise FileNotFoundError(
-            f"Cannot find PDF file '{file_path}'. "
-            f"Checked local candidates: [{candidate_text}]."
+            f"未找到文件 '{file_path}'。已检查以下本地候选路径：[{candidate_text}]。"
         )
 
 
@@ -679,16 +685,354 @@ class Boto3PDFReader:
 
     def load(self, bucket_name: str, file_path: str) -> LoadedPDFFile:
         if not bucket_name:
-            raise ValueError("bucket_name is required when using Boto3PDFReader.")
+            raise ValueError("使用 Boto3PDFReader 时必须提供 bucket_name。")
 
         s3_client = self._create_s3_client()
-        logger.info(f"Loading PDF from object storage: {bucket_name}/{file_path}")
+        logger.info(f"从对象存储加载文件：{bucket_name}/{file_path}")
         response = s3_client.get_object(Bucket=bucket_name, Key=file_path)
         return LoadedPDFFile(
             file_bytes=response["Body"].read(),
             file_name=Path(file_path).name,
             upload_client=s3_client,
         )
+
+
+class FileToPDFConverter:
+    IMAGE_SUFFIXES = {
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".bmp",
+        ".gif",
+        ".tif",
+        ".tiff",
+        ".webp",
+    }
+    TEXT_SUFFIXES = {
+        ".txt",
+        ".md",
+        ".markdown",
+        ".csv",
+        ".json",
+        ".xml",
+        ".html",
+        ".htm",
+        ".yaml",
+        ".yml",
+        ".log",
+        ".ini",
+    }
+    LIBREOFFICE_SUFFIXES = {
+        ".doc",
+        ".docx",
+        ".ppt",
+        ".pptx",
+        ".xls",
+        ".xlsx",
+        ".odt",
+        ".ods",
+        ".odp",
+        ".rtf",
+    }
+    TEXT_ENCODINGS = ("utf-8-sig", "utf-8", "utf-16", "gb18030", "gbk")
+    TEXT_FONT_CANDIDATES = (
+        Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts" / "msyh.ttc",
+        Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts" / "simhei.ttf",
+        Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts" / "simsun.ttc",
+    )
+    DEFAULT_TEMP_DIR = workspace_path / "converted_pdf"
+
+    def __init__(
+        self,
+        save_converted_pdf_to_temp: bool | None = None,
+        temp_dir: str | Path | None = None,
+    ):
+        self.save_converted_pdf_to_temp = self._resolve_save_switch(
+            save_converted_pdf_to_temp
+        )
+        self.temp_dir = Path(temp_dir) if temp_dir else self.DEFAULT_TEMP_DIR
+
+    def ensure_pdf(self, loaded_file: LoadedPDFFile) -> LoadedPDFFile:
+        if self._is_pdf_bytes(loaded_file.file_bytes):
+            return loaded_file
+
+        suffix = Path(loaded_file.file_name).suffix.lower()
+        logger.info(f"检测到非 PDF 文件，开始转换为 PDF：{loaded_file.file_name}")
+        text_content: str | None = None
+        if suffix in self.TEXT_SUFFIXES:
+            text_content = self._decode_text(loaded_file.file_bytes)
+            pdf_bytes = self._convert_text_to_pdf(text_content)
+        else:
+            pdf_bytes = self._convert_to_pdf(
+                file_bytes=loaded_file.file_bytes,
+                file_name=loaded_file.file_name,
+                suffix=suffix,
+            )
+        converted_pdf_temp_path = self._save_converted_pdf_if_needed(
+            pdf_bytes=pdf_bytes,
+            source_file_name=loaded_file.file_name,
+        )
+        return LoadedPDFFile(
+            file_bytes=pdf_bytes,
+            file_name=loaded_file.file_name,
+            upload_client=loaded_file.upload_client,
+            text_content=text_content,
+            converted_pdf_temp_path=converted_pdf_temp_path,
+        )
+
+    def _is_pdf_bytes(self, file_bytes: bytes) -> bool:
+        return file_bytes.lstrip().startswith(b"%PDF-")
+
+    def _convert_to_pdf(self, file_bytes: bytes, file_name: str, suffix: str) -> bytes:
+        if suffix in self.IMAGE_SUFFIXES:
+            return self._convert_image_to_pdf(file_bytes=file_bytes)
+
+        try:
+            return self._convert_with_libreoffice(
+                file_bytes=file_bytes,
+                file_name=file_name,
+                suffix=suffix,
+            )
+        except RuntimeError:
+            if suffix in self.LIBREOFFICE_SUFFIXES:
+                raise
+            raise RuntimeError(
+                f"暂不支持将文件格式 '{suffix or '<unknown>'}' 转换为 PDF：{file_name}"
+            )
+
+    def _convert_image_to_pdf(self, file_bytes: bytes) -> bytes:
+        frames: list[Image.Image] = []
+        try:
+            with Image.open(io.BytesIO(file_bytes)) as image:
+                frame_count = getattr(image, "n_frames", 1)
+                for frame_index in range(frame_count):
+                    if frame_count > 1:
+                        image.seek(frame_index)
+                    frames.append(self._normalize_image_for_pdf(image).copy())
+
+            if not frames:
+                raise RuntimeError("图片转 PDF 失败，未读取到可用图像帧。")
+
+            output = io.BytesIO()
+            frames[0].save(
+                output,
+                format="PDF",
+                save_all=len(frames) > 1,
+                append_images=frames[1:],
+            )
+            return output.getvalue()
+        except UnidentifiedImageError as exc:
+            raise RuntimeError("图片格式不受支持，无法转换为 PDF。") from exc
+        finally:
+            for frame in frames:
+                frame.close()
+
+    def _normalize_image_for_pdf(self, image: Image.Image) -> Image.Image:
+        if image.mode in {"RGBA", "LA"} or "transparency" in image.info:
+            rgba_image = image.convert("RGBA")
+            background = Image.new("RGB", rgba_image.size, (255, 255, 255))
+            background.paste(rgba_image, mask=rgba_image.getchannel("A"))
+            rgba_image.close()
+            return background
+        return image.convert("RGB")
+
+    def _convert_text_to_pdf(self, text: str) -> bytes:
+        lines = self._paginate_text_lines(text)
+        pdf_doc = fitz.open()
+        fontfile = self._resolve_text_fontfile()
+        page_rect = fitz.paper_rect("a4")
+        margin_x = 40
+        margin_y = 48
+        font_size = 10
+        line_height = 16
+        max_lines_per_page = max(
+            1, int((page_rect.height - margin_y * 2) // line_height)
+        )
+
+        for start in range(0, len(lines), max_lines_per_page):
+            page = pdf_doc.new_page(width=page_rect.width, height=page_rect.height)
+            y = margin_y
+            for line in lines[start : start + max_lines_per_page]:
+                insert_kwargs: dict[str, Any] = {
+                    "point": (margin_x, y),
+                    "text": line,
+                    "fontsize": font_size,
+                }
+                if fontfile:
+                    insert_kwargs["fontfile"] = str(fontfile)
+                    insert_kwargs["fontname"] = "source-font"
+                page.insert_text(**insert_kwargs)
+                y += line_height
+
+        if not lines:
+            pdf_doc.new_page(width=page_rect.width, height=page_rect.height)
+
+        try:
+            return pdf_doc.tobytes()
+        finally:
+            pdf_doc.close()
+
+    def _decode_text(self, file_bytes: bytes) -> str:
+        for encoding in self.TEXT_ENCODINGS:
+            try:
+                return file_bytes.decode(encoding)
+            except UnicodeDecodeError:
+                continue
+        return file_bytes.decode("latin-1")
+
+    def _paginate_text_lines(
+        self, text: str, max_units_per_line: int = 80
+    ) -> list[str]:
+        if not text:
+            return []
+
+        normalized_lines: list[str] = []
+        for raw_line in text.splitlines():
+            expanded_line = raw_line.expandtabs(4).rstrip()
+            if not expanded_line:
+                normalized_lines.append("")
+                continue
+            normalized_lines.extend(
+                self._wrap_text_line(expanded_line, max_units=max_units_per_line)
+            )
+        return normalized_lines
+
+    def _wrap_text_line(self, line: str, max_units: int) -> list[str]:
+        chunks: list[str] = []
+        current: list[str] = []
+        current_units = 0
+
+        for char in line:
+            char_units = self._estimate_display_units(char)
+            if current and current_units + char_units > max_units:
+                chunks.append("".join(current))
+                current = [char]
+                current_units = char_units
+                continue
+            current.append(char)
+            current_units += char_units
+
+        if current:
+            chunks.append("".join(current))
+
+        return chunks or [""]
+
+    def _estimate_display_units(self, char: str) -> int:
+        if char == "\t":
+            return 4
+        return 2 if unicodedata.east_asian_width(char) in {"F", "W", "A"} else 1
+
+    def _resolve_text_fontfile(self) -> Path | None:
+        for candidate in self.TEXT_FONT_CANDIDATES:
+            if candidate.is_file():
+                return candidate
+        return None
+
+    def _convert_with_libreoffice(
+        self, file_bytes: bytes, file_name: str, suffix: str
+    ) -> bytes:
+        soffice_path = self._find_soffice()
+        if soffice_path is None:
+            raise RuntimeError(
+                "当前文件需要依赖 LibreOffice/soffice 才能转换为 PDF。"
+                f"{self._get_soffice_install_hint()}"
+            )
+
+        with tempfile.TemporaryDirectory(prefix="rag-pdf-convert-") as temp_dir:
+            temp_dir_path = Path(temp_dir)
+            source_suffix = suffix or ".bin"
+            source_path = temp_dir_path / f"source{source_suffix}"
+            output_path = source_path.with_suffix(".pdf")
+            source_path.write_bytes(file_bytes)
+
+            completed = subprocess.run(
+                [
+                    str(soffice_path),
+                    "--headless",
+                    "--convert-to",
+                    "pdf",
+                    "--outdir",
+                    str(temp_dir_path),
+                    str(source_path),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=120,
+                check=False,
+            )
+            if completed.returncode != 0 or not output_path.is_file():
+                stderr = completed.stderr.strip()
+                stdout = completed.stdout.strip()
+                raise RuntimeError(
+                    f"LibreOffice 转换文件 '{file_name}' 为 PDF 失败。"
+                    f"stdout={stdout!r} stderr={stderr!r}"
+                )
+
+            return output_path.read_bytes()
+
+    def _find_soffice(self) -> Path | None:
+        executable_names = ("soffice", "soffice.exe", "libreoffice", "libreoffice.exe")
+        for executable_name in executable_names:
+            executable_path = shutil.which(executable_name)
+            if executable_path:
+                return Path(executable_path)
+
+        candidate_roots = [
+            os.environ.get("PROGRAMFILES"),
+            os.environ.get("PROGRAMFILES(X86)"),
+        ]
+        for root in candidate_roots:
+            if not root:
+                continue
+            candidate = Path(root) / "LibreOffice" / "program" / "soffice.exe"
+            if candidate.is_file():
+                return candidate
+
+        return None
+
+    def _resolve_save_switch(self, save_converted_pdf_to_temp: bool | None) -> bool:
+        if save_converted_pdf_to_temp is not None:
+            return save_converted_pdf_to_temp
+
+        env_value = os.getenv("SAVE_CONVERTED_PDF_TO_TEMP")
+        if env_value is None:
+            return True
+        return env_value.strip().lower() in {"1", "true", "yes", "on"}
+
+    def _save_converted_pdf_if_needed(
+        self, pdf_bytes: bytes, source_file_name: str
+    ) -> str | None:
+        if not self.save_converted_pdf_to_temp:
+            logger.debug("已关闭转换后 PDF 临时落盘开关，跳过保存。")
+            return None
+
+        self.temp_dir.mkdir(parents=True, exist_ok=True)
+        temp_pdf_name = f"{Path(source_file_name).stem}_{uuid.uuid4().hex}.pdf"
+        temp_pdf_path = self.temp_dir / temp_pdf_name
+        temp_pdf_path.write_bytes(pdf_bytes)
+        logger.info(f"已保存转换后的 PDF 到临时目录：{temp_pdf_path}")
+        return str(temp_pdf_path)
+
+    def _get_soffice_install_hint(self) -> str:
+        if sys.platform.startswith("win"):
+            return (
+                "Windows 安装方法：访问 "
+                "https://www.libreoffice.org/download/download-libreoffice/ "
+                "下载并安装 LibreOffice。安装完成后，请确认 "
+                r"'C:\Program Files\LibreOffice\program\soffice.exe' "
+                "存在，或将 LibreOffice 的 program 目录加入 PATH。"
+            )
+
+        if sys.platform.startswith("linux"):
+            return (
+                "Linux 安装方法：使用包管理器安装 LibreOffice，例如 "
+                "`sudo apt-get update && sudo apt-get install -y libreoffice`、"
+                "`sudo dnf install -y libreoffice`，或 "
+                "`sudo yum install -y libreoffice`。安装完成后，请确认 "
+                "`soffice` 命令可在 PATH 中直接使用。"
+            )
+
+        return "请安装 LibreOffice，并确认 `soffice` 命令已加入 PATH。"
 
 
 class PDFParser:
@@ -700,26 +1044,32 @@ class PDFParser:
         file_path: str,
         file_id: str | None = None,
         reader: PDFFileReader | None = None,
+        save_converted_pdf_to_temp: bool | None = None,
+        converter: FileToPDFConverter | None = None,
     ):
         self.bucket_name = bucket_name
         self.file_path = file_path
         self.file_id = file_id
         self.reader = reader or LocalDirectoryPDFReader(self.DEFAULT_LOCAL_ROOT)
+        self.converter = converter or FileToPDFConverter(
+            save_converted_pdf_to_temp=save_converted_pdf_to_temp
+        )
 
     def _build_file_id(self) -> str:
         if self.file_id:
-            logger.info(f"Using provided file_id: {self.file_id}")
+            logger.info(f"使用传入的 file_id：{self.file_id}")
             return self.file_id
 
         generated_file_id = str(uuid.uuid4())
-        logger.info(f"Generated file_id: {generated_file_id}")
+        logger.info(f"自动生成 file_id：{generated_file_id}")
         return generated_file_id
 
     def _load_file(self) -> LoadedPDFFile:
-        return self.reader.load(
+        loaded_file = self.reader.load(
             bucket_name=self.bucket_name,
             file_path=self.file_path,
         )
+        return self.converter.ensure_pdf(loaded_file)
 
     def _extract_page_data(
         self,
@@ -728,20 +1078,33 @@ class PDFParser:
         use_table: bool,
         use_image: bool,
         s3_client,
+        text_fallback: str | None = None,
     ) -> tuple[list[dict[str, Any]], int]:
+        if text_fallback is not None:
+            return (
+                [
+                    {
+                        "text": text_fallback,
+                        "pages_number": 1,
+                        "content_table": [],
+                        "content_image": [],
+                    }
+                ],
+                1,
+            )
+
         page_data: list[dict[str, Any]] = []
 
         with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
             pdf_lens = len(pdf.pages)
-            logger.debug(f"{self.file_path} PDF pages: {pdf_lens}")
+            logger.debug(f"{self.file_path} 的 PDF 页数：{pdf_lens}")
 
             for page_number, page in enumerate(pdf.pages, start=1):
                 try:
                     text = page.extract_text() or ""
                 except Exception as exc:
                     logger.warning(
-                        f"Failed to extract text from page {page_number} of "
-                        f"{self.file_path}: {exc}"
+                        f"提取 {self.file_path} 第 {page_number} 页文本失败：{exc}"
                     )
                     continue
 
@@ -753,12 +1116,10 @@ class PDFParser:
                             image_data = io.BytesIO(image_data_bin)
                             try:
                                 image_data_ = copy.deepcopy(image_data)
-                                pil_image = PIL.Image.open(image_data_)
+                                pil_image = Image.open(image_data_)
                                 pil_image.verify()
-                            except PIL.UnidentifiedImageError:
-                                logger.warning(
-                                    "Image verification failed, skipping image."
-                                )
+                            except UnidentifiedImageError:
+                                logger.warning("图片校验失败，跳过当前图片。")
                                 continue
 
                             text_lines = text.split("\n")
@@ -785,9 +1146,7 @@ class PDFParser:
                                 length=len(image_data_bin),
                             )
                         except IndexError:
-                            logger.warning(
-                                "Image upload failed, skipping current image."
-                            )
+                            logger.warning("图片上传失败，跳过当前图片。")
                             continue
 
                 page_md_list: list[str] = []
@@ -813,7 +1172,7 @@ class PDFParser:
                                     page_table_idx.append(index)
                             except ValueError:
                                 logger.warning(
-                                    "Table parsing raised ValueError, skipping."
+                                    "表格解析出现 ValueError，已跳过当前表格。"
                                 )
 
                     for index in page_table_idx:
@@ -866,16 +1225,16 @@ class PDFParser:
         use_table: bool,
         use_image: bool,
     ) -> list[Document]:
-        logger.debug("Start splitting document chunks.")
+        logger.debug("开始切分文档分块。")
         split_strategy = structure_info["split_strategy"]
-        logger.info(f"split_strategy: {split_strategy}")
+        logger.info(f"分块策略：{split_strategy}")
 
         if split_strategy == "chunksplit":
             return text_splitter.split_documents3(docs)
 
         chunksplit_docs = text_splitter.split_documents3(docs)
         title_level = structure_info["max_title_level"]
-        logger.info(f"title_level: {title_level}")
+        logger.info(f"标题层级：{title_level}")
 
         pdf_doc = fitz.Document(stream=file_bytes)
         try:
@@ -885,7 +1244,7 @@ class PDFParser:
 
         toc = list(extract_toc_from_fitz(title_info, level=title_level))
         toc.insert(0, ("$#", 1, 1))
-        logger.info(f"toc size: {len(toc)}")
+        logger.info(f"目录项数量：{len(toc)}")
 
         title_docs: list[Document] = []
         for idx, (title, page, level) in enumerate(toc):
@@ -906,7 +1265,7 @@ class PDFParser:
             if use_table:
                 pattern_table = r"\*\*\[TABLE_\d+\]\*\*"
                 table_matchers = re.findall(pattern_table, text)
-                logger.debug(f"table_matchers len {len(table_matchers)} title {title}")
+                logger.debug(f"标题 {title} 命中的表格标记数量：{len(table_matchers)}")
                 if len(table_matchers) >= 50:
                     for table_mark in table_matchers:
                         text = text.replace(table_mark, "")
@@ -988,10 +1347,14 @@ class PDFParser:
         return title_docs or chunksplit_docs
 
     def _finalize_docs(
-        self, docs: list[Document], file_name: str, file_id: str
+        self,
+        docs: list[Document],
+        file_name: str,
+        file_id: str,
+        converted_pdf_temp_path: str | None = None,
     ) -> list[Document]:
         if not docs:
-            raise Exception("PDF parsing failed because no text content was extracted.")
+            raise Exception("PDF 解析失败，未提取到任何文本内容。")
 
         for segment_id, doc in enumerate(docs, start=1):
             doc.metadata.update(
@@ -1002,10 +1365,11 @@ class PDFParser:
                     "state": True,
                     "bucket_name": self.bucket_name,
                     "file_path": self.file_path,
+                    "converted_pdf_temp_path": converted_pdf_temp_path,
                 }
             )
 
-        logger.info(f"file_name: {file_name} file_id: {file_id}")
+        logger.info(f"文件切分完成，file_name={file_name}，file_id={file_id}")
         return docs
 
     def get_chunk(self) -> List[Document]:
@@ -1015,8 +1379,8 @@ class PDFParser:
         file_id = self._build_file_id()
         use_table = False
         use_image = False
-        logger.info(f"use_table: {use_table}")
-        logger.info(f"use_image: {use_image}")
+        logger.info(f"是否启用表格解析：{use_table}")
+        logger.info(f"是否启用图片解析：{use_image}")
 
         loaded_file = self._load_file()
         structure_info = detect_pdf_structure(file_bytes=loaded_file.file_bytes)
@@ -1026,13 +1390,14 @@ class PDFParser:
             use_table=use_table,
             use_image=use_image,
             s3_client=loaded_file.upload_client,
+            text_fallback=loaded_file.text_content,
         )
 
         docs = [
             Document(page_content=page_info.get("text", ""), metadata=page_info)
             for page_info in page_data
         ]
-        logger.debug(f"{self.file_path} parsed page count: {len(docs)}")
+        logger.debug(f"{self.file_path} 解析出的页面文档数：{len(docs)}")
 
         docs = self._split_documents_by_structure(
             docs=docs,
@@ -1042,16 +1407,17 @@ class PDFParser:
             use_table=use_table,
             use_image=use_image,
         )
-        logger.info(f"final chunk count: {len(docs)}")
+        logger.info(f"最终分块数量：{len(docs)}")
 
         return self._finalize_docs(
             docs=docs,
             file_name=loaded_file.file_name,
             file_id=file_id,
+            converted_pdf_temp_path=loaded_file.converted_pdf_temp_path,
         )
 
 
 if __name__ == "__main__":
-    pdf_parser = PDFParser(bucket_name="法律", file_path="中华人民共和国民法典.pdf")
+    pdf_parser = PDFParser(bucket_name="法律", file_path="Quick Start.txt")
     docs = pdf_parser.get_chunk()
     print(docs[0])
