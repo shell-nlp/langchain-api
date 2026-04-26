@@ -11,7 +11,7 @@ post : http://localhost:7869/api/general_api (SSE 流式响应)
 import uuid
 from typing import Literal
 
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import AIMessageChunk
 from langgraph.graph.state import CompiledStateGraph
@@ -73,10 +73,11 @@ class StreamResponse(BaseModel):
 
 
 def add_general_api_endpoint(
-    app: FastAPI,
+    app: FastAPI | APIRouter,
     agent: CompiledStateGraph,
     path: str = "/api/general_api",
     context: type[BaseModel] | None = None,
+    name: str | None = None,
 ):
     """添加通用 API 端点，用于与 LangGraph 交互。
 
@@ -114,7 +115,9 @@ def add_general_api_endpoint(
         # 如果没有 context，直接使用 GeneralAPIRequest
         Request = GeneralAPIRequest
 
-    @app.post(path, response_model=StreamResponse)
+    route_name = name or f"general_api_{path.strip('/').replace('/', '_')}"
+
+    @app.post(path, response_model=StreamResponse, name=route_name)
     async def general_api(request: Request):
         logger.debug(f"request: \n{request.model_dump_json(indent=2)}")
         config = {"configurable": {"thread_id": f"{request.session_id}"}}

@@ -50,6 +50,7 @@ interface StreamEvent {
 }
 
 const DEFAULT_BACKEND_URL = 'http://localhost:7869'
+const DEFAULT_API_PATH = '/api/agent/general_api'
 
 function getApiBaseUrl(): string {
   const envUrl = process.env.NEXT_PUBLIC_API_BASE_URL
@@ -63,6 +64,11 @@ function getApiBaseUrl(): string {
   }
 
   return origin
+}
+
+function getGeneralApiUrl(): string {
+  const apiPath = process.env.NEXT_PUBLIC_GENERAL_API_PATH || DEFAULT_API_PATH
+  return `${getApiBaseUrl()}${apiPath.startsWith('/') ? apiPath : `/${apiPath}`}`
 }
 
 function generateSessionId(): string {
@@ -368,7 +374,7 @@ export default function ChatInterface() {
     }
 
     try {
-      const response = await fetch(`${getApiBaseUrl()}/api/general_api`, {
+      const response = await fetch(getGeneralApiUrl(), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -442,7 +448,7 @@ export default function ChatInterface() {
     abortControllerRef.current = new AbortController()
 
     try {
-      const response = await fetch(`${getApiBaseUrl()}/api/general_api`, {
+      const response = await fetch(getGeneralApiUrl(), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
