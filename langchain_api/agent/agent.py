@@ -10,33 +10,40 @@ from loguru import logger
 
 from langchain_api.agent.context import AgentContext
 from langchain_api.constant import home_path, workspace_path
+from langchain_api.middleware.common import BusinessMiddleware
 from langchain_api.settings import settings
 from langchain_api.utils import get_chat_model, get_current_time
-from langchain_api.middleware.common import BusinessMiddleware
 
-checkpointer = InMemorySaver()  # 短期记忆
-if settings.PG_DATABASE_URL:
-    from langgraph.store.postgres import PostgresStore
+checkpointer = None
+store = None
 
-    store_ctx = PostgresStore.from_conn_string(settings.PG_DATABASE_URL)
-    store = store_ctx.__enter__()
-    store.setup()
-    logger.info("使用PostgresStore作为长期记忆")
-else:
-    from langgraph.store.memory import InMemoryStore
 
-    store = InMemoryStore()  # 长期记忆
-    logger.info("使用InMemoryStore作为长期记忆")
-# 检查当前操作系统是Windows还是Linux
-platform = sys.platform
-if platform.startswith("win"):
+def init_env():
+    global checkpointer, store
+    checkpointer = InMemorySaver()
+    if settings.PG_DATABASE_URL:
+        from langgraph.store.postgres import PostgresStore
+
+        store_ctx = PostgresStore.from_conn_string(settings.PG_DATABASE_URL)
+        store = store_ctx.__enter__()
+        store.setup()
+        logger.info("使用PostgresStore作为长期记忆")
+    else:
+        from langgraph.store.memory import InMemoryStore
+
+        store = InMemoryStore()
+        logger.info("使用InMemoryStore作为长期记忆")
+
+
+_platform = sys.platform
+if _platform.startswith("win"):
     DEFUALT_SYSTEM_PROMPT = "你的运行环境是 Windows 系统, 你可以使用 Windows 相关的命令"
-elif platform.startswith("linux"):
+elif _platform.startswith("linux"):
     DEFUALT_SYSTEM_PROMPT = "你的运行环境是 Linux 系统, 你可以使用 Linux 相关的命令"
-elif platform.startswith("darwin"):
+elif _platform.startswith("darwin"):
     DEFUALT_SYSTEM_PROMPT = "你的运行环境是 macOS 系统, 你可以使用 macOS 相关的命令"
 else:
-    DEFUALT_SYSTEM_PROMPT = f"你的运行环境未知: {platform}"
+    DEFUALT_SYSTEM_PROMPT = f"你的运行环境未知: {_platform}"
 
 skills = ["/workspace/skills"]
 
@@ -57,36 +64,29 @@ class Agent:
         tools: list = [],
         deep_agent: bool = False,
     ):
+        self.system_prompt = system_prompt
+        self.tools = tools
+        self.deep_agent = deep_agent
+        self.agent = self.init_agent()
+
+    def init_agent(self) -> CompiledStateGraph:
         middleware = []
-        # 是否使用CopilotKit中间件
         if settings.USE_COPILOTKIT:
             from copilotkit import CopilotKitMiddleware
 
             middleware.append(CopilotKitMiddleware())
-        # else:
         middleware.append(BusinessMiddleware())
-        middleware.extend(
-            [
-                # HumanInTheLoopMiddleware(
-                #     description_prefix="工具执行需要批准",
-                #     interrupt_on={
-                #         "execute": {"allowed_decisions": ["approve", "reject", "edit"]}
-                #     },
-                # ),
-            ]
-        )
 
-        system_prompt = system_prompt + get_current_time()
-        self.model = get_chat_model()
-        self.model.tags = ["agent"]
+        system_prompt = self.system_prompt + get_current_time()
+        model = get_chat_model()
+        model.tags = ["agent"]
         from langchain_api.tools import get_weather, web_fetch
 
         backend = None
-        tools.extend([get_weather, web_fetch])
+        tools = self.tools + [get_weather, web_fetch]
 
         if not workspace_path.exists():
             workspace_path.mkdir(parents=True, exist_ok=True)
-        # 使用沙箱作为后端
         if settings.BACKEND_TYPE == "sandbox":
             from opensandbox.models.sandboxes import Host, Volume
 
@@ -103,15 +103,12 @@ class Agent:
             )
             logger.info("使用 OpenSandbox 作为后端")
         elif settings.BACKEND_TYPE == "local_shell":
-            # 使用虚拟文件系统作为后端
             from deepagents.backends.local_shell import LocalShellBackend
 
             backend = LocalShellBackend(
                 root_dir=home_path, virtual_mode=True, inherit_env=True
             )
             logger.info("使用 LocalShellBackend 作为后端")
-
-        # -------------------------------
         elif settings.BACKEND_TYPE == "store":
             from langchain_api.agent.utils import copy_skills_to_store
 
@@ -131,20 +128,19 @@ class Agent:
                     "/memories/": StoreBackend(
                         runtime, namespace=user_namespace_factory
                     ),
-                },  # Persistent storage
+                },
             )
 
         if settings.USE_TOOL_SEARCH:
-            # 最后加载,保证工具可以被完全拦截
             from langchain_api.middleware.tool_search import DeferredToolMiddleware
 
             middleware.append(DeferredToolMiddleware())
 
-        if deep_agent:
+        if self.deep_agent:
             logger.info("使用 DeepAgent")
 
-            self.agent = create_deep_agent(
-                model=self.model,
+            return create_deep_agent(
+                model=model,
                 tools=tools,
                 system_prompt=system_prompt,
                 middleware=middleware,
@@ -157,8 +153,8 @@ class Agent:
         else:
             logger.info("正在使用 ReactAgent")
 
-            self.agent = create_agent(
-                model=self.model,
+            return create_agent(
+                model=model,
                 tools=tools,
                 system_prompt=system_prompt,
                 middleware=middleware,
@@ -173,6 +169,5 @@ class Agent:
 
 if __name__ == "__main__":
     model = get_chat_model()
-    model.get_num_tokens_from_messages
     for chunk in model.stream("1+1="):
         print(chunk)
