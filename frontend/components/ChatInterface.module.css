@@ -1205,14 +1205,14 @@
   z-index: 1;
   flex: 1;
   width: 100%;
-  background: var(--bg-card);
-  border-left: 1px solid var(--border-subtle);
-  border-right: 1px solid var(--border-subtle);
-  padding: 32px;
+  background: rgba(255, 255, 255, 0.58);
+  border-left: 1px solid rgba(15, 23, 42, 0.04);
+  border-right: 1px solid rgba(15, 23, 42, 0.04);
+  padding: 32px clamp(20px, 5vw, 72px);
   overflow-y: auto;
   min-height: 0;
   scroll-behavior: smooth;
-  box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.02);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
 }
 
 .welcome {
@@ -1275,93 +1275,109 @@
 }
 
 .message {
-  margin-bottom: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 28px;
   animation: messageSlide 0.3s ease-out;
+}
+
+.message.user {
+  align-items: flex-end;
+}
+
+.message.ai {
+  align-items: flex-start;
 }
 
 .messageHeader {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 12px;
-  padding-left: 4px;
+  gap: 10px;
+  color: var(--text-muted);
+  padding: 0 2px;
+}
+
+.message.user .messageHeader {
+  display: none;
 }
 
 .avatar {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+  background: #111827;
   color: white;
-  border: 2px solid rgba(79, 70, 229, 0.3);
-  box-shadow: 0 4px 15px rgba(79, 70, 229, 0.2);
+  border: none;
+  box-shadow: none;
+  font-size: 13px;
+  font-weight: 700;
+  flex-shrink: 0;
 }
 
 .avatar.ai {
-  background: linear-gradient(135deg, var(--accent-secondary), var(--accent-tertiary));
-  border-color: rgba(124, 58, 237, 0.3);
-  box-shadow: 0 4px 15px rgba(124, 58, 237, 0.2);
+  background: #111827;
 }
 
 .author {
   font-weight: 600;
-  font-size: 15px;
-  color: var(--text-primary);
+  font-size: 13px;
+  color: #111827;
 }
 
 .time {
   font-size: 12px;
   color: var(--text-muted);
-  margin-left: auto;
   font-family: 'JetBrains Mono', monospace;
 }
 
 .messageContent {
-  margin-left: 46px;
-  padding: 20px 24px;
-  border-radius: 0 var(--radius-lg) var(--radius-lg) var(--radius-lg);
+  width: min(100%, 880px);
+  max-width: min(100%, 880px);
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
   line-height: 1.7;
   font-size: 15px;
-  background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  box-shadow: var(--shadow-md);
+  background: transparent;
+  border: none;
+  box-shadow: none;
   position: relative;
   overflow: hidden;
+  color: var(--text-primary);
 }
 
 .messageContent::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 4px;
-  background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  display: none;
 }
 
 .message.user .messageContent {
-  border-radius: var(--radius-lg) var(--radius-lg) var(--radius-lg) 4px;
-}
-
-.message.user .messageContent::before {
-  background: linear-gradient(90deg, var(--success), #059669);
+  width: fit-content;
+  max-width: min(72%, 760px);
+  padding: 14px 18px;
+  border-radius: 22px;
+  background: rgba(243, 244, 246, 0.95);
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
 }
 
 .message.ai .messageContent {
-  border-radius: 4px var(--radius-lg) var(--radius-lg) var(--radius-lg);
+  width: min(100%, 880px);
+  max-width: min(100%, 880px);
 }
 
 .reasoningContainer {
-  margin: 0 0 16px 46px;
-  background: linear-gradient(135deg, rgba(79, 70, 229, 0.1), rgba(124, 58, 237, 0.1));
-  border: 1px solid rgba(79, 70, 229, 0.2);
-  border-radius: var(--radius-lg);
+  width: min(100%, 880px);
+  max-width: min(100%, 880px);
+  margin: 0 0 8px;
+  background: rgba(255, 248, 235, 0.88);
+  border: 1px solid rgba(217, 119, 6, 0.16);
+  border-radius: 18px;
   overflow: hidden;
-  box-shadow: var(--shadow-sm);
+  box-shadow: none;
 }
 
 .reasoningHeader {
@@ -1369,13 +1385,13 @@
   align-items: center;
   gap: 10px;
   padding: 12px 16px;
-  background: rgba(79, 70, 229, 0.15);
-  border-bottom: 1px solid rgba(79, 70, 229, 0.2);
-  color: var(--accent-primary);
-  font-size: 13px;
+  background: rgba(245, 158, 11, 0.08);
+  border-bottom: 1px solid rgba(217, 119, 6, 0.12);
+  color: #92400e;
+  font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.08em;
 }
 
 .reasoningContent {
@@ -1389,34 +1405,28 @@
 .typingIndicator {
   display: flex;
   gap: 6px;
-  padding: 20px 24px;
-  margin-left: 46px;
+  width: fit-content;
+  padding: 12px 16px;
+  margin: 0;
   align-items: center;
-  background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: 4px var(--radius-lg) var(--radius-lg) var(--radius-lg);
-  box-shadow: var(--shadow-md);
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 999px;
+  box-shadow: none;
   position: relative;
 }
 
 .typingIndicator::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 4px;
-  background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  display: none;
 }
 
 .typingIndicator span {
-  width: 10px;
-  height: 10px;
-  background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+  width: 8px;
+  height: 8px;
+  background: #6b7280;
   border-radius: 50%;
   animation: typingBounce 1.4s ease-in-out infinite;
-  box-shadow: 0 0 8px rgba(79, 70, 229, 0.3);
+  box-shadow: none;
 }
 
 .typingIndicator span:nth-child(1) {
@@ -1428,25 +1438,26 @@
 }
 
 .toolCard {
-  margin: 0 0 16px 46px;
-  background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(245, 158, 11, 0.03));
-  border: 1px solid rgba(245, 158, 11, 0.3);
-  border-radius: var(--radius-lg);
+  width: min(100%, 880px);
+  max-width: min(100%, 880px);
+  margin: 0 0 8px;
+  background: rgba(255, 251, 235, 0.92);
+  border: 1px solid rgba(245, 158, 11, 0.18);
+  border-radius: 18px;
   overflow: hidden;
   cursor: pointer;
   transition: all 0.2s ease;
-  box-shadow: var(--shadow-sm);
+  box-shadow: none;
 }
 
 .toolCard:hover {
-  border-color: rgba(245, 158, 11, 0.5);
-  box-shadow: 0 6px 24px rgba(245, 158, 11, 0.15);
-  transform: translateY(-2px);
+  border-color: rgba(245, 158, 11, 0.3);
+  background: rgba(255, 248, 230, 0.96);
+  transform: translateY(-1px);
 }
 
 .toolCard.expanded {
-  border-color: rgba(245, 158, 11, 0.6);
-  box-shadow: 0 8px 32px rgba(245, 158, 11, 0.2);
+  border-color: rgba(245, 158, 11, 0.34);
 }
 
 .toolCardHeader {
@@ -1454,8 +1465,8 @@
   align-items: center;
   gap: 12px;
   padding: 16px 20px;
-  background: rgba(245, 158, 11, 0.05);
-  border-bottom: 1px solid rgba(245, 158, 11, 0.2);
+  background: rgba(245, 158, 11, 0.04);
+  border-bottom: 1px solid rgba(245, 158, 11, 0.12);
 }
 
 .toolIcon {
@@ -2582,19 +2593,31 @@
   }
 
   .messageContent {
-    margin-left: 40px;
     padding: 16px 20px;
   }
 
+  .message.user .messageContent {
+    max-width: 82%;
+    padding: 13px 16px;
+  }
+
+  .message.ai .messageContent {
+    padding: 0;
+  }
+
   .avatar {
-    width: 36px;
-    height: 36px;
+    width: 30px;
+    height: 30px;
   }
 
   .reasoningContainer,
-  .toolCard,
+  .toolCard {
+    width: 100%;
+    max-width: 100%;
+  }
+
   .typingIndicator {
-    margin-left: 40px;
+    max-width: 100%;
   }
 
   .inputArea {
@@ -2662,20 +2685,31 @@
   }
 
   .messageContent {
-    margin-left: 36px;
-    padding: 14px 16px;
     font-size: 14px;
   }
 
+  .message.user .messageContent {
+    max-width: 90%;
+    padding: 12px 15px;
+  }
+
+  .message.ai .messageContent {
+    padding: 0;
+  }
+
   .avatar {
-    width: 32px;
-    height: 32px;
+    width: 28px;
+    height: 28px;
   }
 
   .reasoningContainer,
-  .toolCard,
+  .toolCard {
+    width: 100%;
+    max-width: 100%;
+  }
+
   .typingIndicator {
-    margin-left: 36px;
+    max-width: 100%;
   }
 
   .input {
