@@ -32,17 +32,24 @@ export function ToolCard({ toolData }: ToolCardProps) {
   return (
     <div
       className={`${styles.toolCard} ${expanded ? styles.expanded : ''}`}
-      onClick={() => setExpanded(!expanded)}
     >
-      <div className={styles.toolCardHeader}>
+      <button
+        type="button"
+        className={styles.toolCardHeader}
+        aria-expanded={expanded}
+        onClick={() => setExpanded((current) => !current)}
+      >
         <div className={styles.toolIcon}>{getToolIcon(toolName)}</div>
         <div className={styles.toolInfo}>
           <span className={styles.toolName}>{toolName}</span>
           <span className={styles.toolArgs}>{argsSummary}</span>
         </div>
-        <div className={`${styles.toolStatus} ${styles.success}`}>OK</div>
+        <div
+          className={`${styles.toolStatus} ${styles.success}`}
+          aria-label="执行完成"
+        />
         <div className={styles.toolExpandIcon}>{expanded ? '-' : '+'}</div>
-      </div>
+      </button>
       {expanded && (
         <div className={styles.toolCardDetails}>
           {toolData.toolCall && (

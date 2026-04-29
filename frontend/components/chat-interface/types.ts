@@ -3,8 +3,33 @@ export interface Message {
   role: 'user' | 'ai'
   content: string
   reasoningContent?: string
+  reasoningBlocks?: ReasoningBlock[]
+  contentBlocks?: ReasoningBlock[]
+  messageItems?: AssistantMessageItem[]
   toolData?: ToolData[]
 }
+
+export interface ReasoningBlock {
+  id: string
+  content: string
+}
+
+export type AssistantMessageItem =
+  | {
+      id: string
+      type: 'reasoning'
+      reasoningBlockId: string
+    }
+  | {
+      id: string
+      type: 'tool'
+      toolCallId: string
+    }
+  | {
+      id: string
+      type: 'content'
+      contentBlockId: string
+    }
 
 export interface ToolData {
   toolCall: {

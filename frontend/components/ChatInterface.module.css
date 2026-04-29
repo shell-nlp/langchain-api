@@ -1373,29 +1373,59 @@
   width: min(100%, 880px);
   max-width: min(100%, 880px);
   margin: 0 0 8px;
-  background: rgba(255, 248, 235, 0.88);
-  border: 1px solid rgba(217, 119, 6, 0.16);
-  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-left: 3px solid rgba(15, 118, 110, 0.58);
+  border-radius: 12px;
   overflow: hidden;
-  box-shadow: none;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
 }
 
 .reasoningHeader {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 10px;
-  padding: 12px 16px;
-  background: rgba(245, 158, 11, 0.08);
-  border-bottom: 1px solid rgba(217, 119, 6, 0.12);
-  color: #92400e;
+  width: 100%;
+  padding: 11px 14px;
+  background: rgba(15, 118, 110, 0.05);
+  border: 0;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+  color: #235d49;
+  cursor: pointer;
   font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
+  text-align: left;
+}
+
+.reasoningHeader:hover {
+  background: rgba(15, 118, 110, 0.08);
+}
+
+.reasoningHeader:focus-visible,
+.toolCardHeader:focus-visible {
+  outline: 2px solid rgba(79, 70, 229, 0.45);
+  outline-offset: -2px;
+}
+
+.reasoningToggleIcon {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: #235d49;
+  background: rgba(15, 118, 110, 0.1);
+  font-size: 14px;
+  line-height: 1;
+  flex-shrink: 0;
 }
 
 .reasoningContent {
-  padding: 16px;
+  padding: 14px 16px 16px;
   font-size: 14px;
   color: var(--text-secondary);
   line-height: 1.7;
@@ -1441,32 +1471,40 @@
   width: min(100%, 880px);
   max-width: min(100%, 880px);
   margin: 0 0 8px;
-  background: rgba(255, 251, 235, 0.92);
-  border: 1px solid rgba(245, 158, 11, 0.18);
-  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-left: 3px solid rgba(79, 70, 229, 0.38);
+  border-radius: 12px;
   overflow: hidden;
-  cursor: pointer;
   transition: all 0.2s ease;
-  box-shadow: none;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
 }
 
 .toolCard:hover {
-  border-color: rgba(245, 158, 11, 0.3);
-  background: rgba(255, 248, 230, 0.96);
+  border-color: rgba(15, 23, 42, 0.12);
+  background: rgba(255, 255, 255, 0.94);
   transform: translateY(-1px);
 }
 
 .toolCard.expanded {
-  border-color: rgba(245, 158, 11, 0.34);
+  border-color: rgba(79, 70, 229, 0.2);
 }
 
 .toolCardHeader {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 16px 20px;
-  background: rgba(245, 158, 11, 0.04);
-  border-bottom: 1px solid rgba(245, 158, 11, 0.12);
+  width: 100%;
+  padding: 14px 16px;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+  cursor: pointer;
+  text-align: left;
+}
+
+.toolCardHeader:hover {
+  background: rgba(79, 70, 229, 0.04);
 }
 
 .toolIcon {
@@ -1476,10 +1514,10 @@
   align-items: center;
   justify-content: center;
   font-size: 20px;
-  background: rgba(245, 158, 11, 0.2);
+  background: rgba(79, 70, 229, 0.1);
   border-radius: var(--radius-md);
-  color: #b45309;
-  box-shadow: var(--shadow-sm);
+  color: var(--accent-primary);
+  box-shadow: none;
   flex-shrink: 0;
 }
 
@@ -1495,7 +1533,7 @@
   font-family: 'JetBrains Mono', monospace;
   font-size: 14px;
   font-weight: 600;
-  color: #b45309;
+  color: var(--text-primary);
 }
 
 .toolArgs {
@@ -1508,19 +1546,19 @@
 }
 
 .toolStatus {
-  width: 28px;
-  height: 28px;
+  width: 9px;
+  height: 9px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  font-size: 14px;
+  flex-shrink: 0;
 }
 
 .toolStatus.success {
   color: var(--success);
-  background: rgba(16, 185, 129, 0.2);
-  box-shadow: var(--shadow-sm);
+  background: #10b981;
+  box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.12);
 }
 
 .toolExpandIcon {
@@ -1530,13 +1568,12 @@
 }
 
 .toolCard.expanded .toolExpandIcon {
-  transform: rotate(180deg);
-  color: #d97706;
+  color: var(--accent-primary);
 }
 
 .toolCardDetails {
-  padding: 0 20px 20px;
-  border-top: 1px solid rgba(245, 158, 11, 0.2);
+  padding: 0 16px 16px;
+  border-top: 1px solid rgba(15, 23, 42, 0.06);
   animation: slideDown 0.25s ease-out;
 }
 
@@ -1565,21 +1602,21 @@
   word-break: break-word;
   max-height: 200px;
   overflow-y: auto;
-  box-shadow: var(--shadow-sm);
+  box-shadow: none;
 }
 
 .toolDetailCode.inputCode,
 .inputCode {
-  background: rgba(251, 191, 36, 0.12);
-  color: #92400e;
-  border: 1px solid rgba(251, 191, 36, 0.25);
+  background: rgba(243, 244, 246, 0.9);
+  color: var(--text-secondary);
+  border: 1px solid rgba(15, 23, 42, 0.08);
 }
 
 .toolDetailCode.outputCode,
 .outputCode {
-  background: rgba(16, 185, 129, 0.1);
-  color: #047857;
-  border: 1px solid rgba(16, 185, 129, 0.2);
+  background: rgba(15, 118, 110, 0.06);
+  color: #235d49;
+  border: 1px solid rgba(15, 118, 110, 0.14);
 }
 
 .inputArea {

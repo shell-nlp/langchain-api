@@ -34,6 +34,7 @@ import {
 } from './chat-interface/constants'
 import { KnowledgeManagementView } from './chat-interface/KnowledgeManagementView'
 import type {
+  AssistantMessageItem,
   BulkDeleteDocumentResponse,
   BulkDeleteKnowledgeBaseResponse,
   InterruptData,
@@ -45,6 +46,7 @@ import type {
   PaginatedKnowledgeBaseResponse,
   PaginatedKnowledgeDocumentResponse,
   RequestMode,
+  ReasoningBlock,
   StreamEvent,
   UploadResult,
   ViewMode,
@@ -59,6 +61,112 @@ import {
   parseRouteHash,
   stringifyToolContent,
 } from './chat-interface/utils'
+
+function appendReasoningToken(
+  blocks: ReasoningBlock[] | undefined,
+  items: AssistantMessageItem[] | undefined,
+  token: string,
+  startNewBlock: boolean,
+  createBlockId: () => string,
+  legacyContent?: string
+): { reasoningBlocks: ReasoningBlock[]; messageItems: AssistantMessageItem[] } {
+  const normalizedBlocks =
+    blocks && blocks.length > 0
+      ? blocks
+      : legacyContent
+        ? [{ id: createBlockId(), content: legacyContent }]
+        : []
+  const normalizedItems =
+    items && items.length > 0
+      ? items
+      : normalizedBlocks.map((block) => ({
+          id: `reasoning_item_${block.id}`,
+          type: 'reasoning' as const,
+          reasoningBlockId: block.id,
+        }))
+
+  if (startNewBlock || normalizedBlocks.length === 0) {
+    const id = createBlockId()
+    return {
+      reasoningBlocks: [...normalizedBlocks, { id, content: token }],
+      messageItems: [
+        ...normalizedItems,
+        {
+          id: `reasoning_item_${id}`,
+          type: 'reasoning',
+          reasoningBlockId: id,
+        },
+      ],
+    }
+  }
+
+  return {
+    reasoningBlocks: normalizedBlocks.map((block, index) =>
+      index === normalizedBlocks.length - 1
+        ? { ...block, content: `${block.content}${token}` }
+        : block
+    ),
+    messageItems: normalizedItems,
+  }
+}
+
+function appendContentToken(
+  blocks: ReasoningBlock[] | undefined,
+  items: AssistantMessageItem[] | undefined,
+  token: string,
+  appendToLastBlock: boolean,
+  createBlockId: () => string
+): { contentBlocks: ReasoningBlock[]; messageItems: AssistantMessageItem[] } {
+  const normalizedBlocks = blocks || []
+  const normalizedItems = items || []
+
+  if (appendToLastBlock && normalizedBlocks.length > 0) {
+    return {
+      contentBlocks: normalizedBlocks.map((block, index) =>
+        index === normalizedBlocks.length - 1
+          ? { ...block, content: `${block.content}${token}` }
+          : block
+      ),
+      messageItems: normalizedItems,
+    }
+  }
+
+  const id = createBlockId()
+  return {
+    contentBlocks: [...normalizedBlocks, { id, content: token }],
+    messageItems: [
+      ...normalizedItems,
+      {
+        id: `content_item_${id}`,
+        type: 'content',
+        contentBlockId: id,
+      },
+    ],
+  }
+}
+
+function ensureToolItem(
+  items: AssistantMessageItem[] | undefined,
+  toolCallId: string
+): AssistantMessageItem[] {
+  const normalizedItems = items || []
+  if (
+    normalizedItems.some(
+      (item) => item.type === 'tool' && item.toolCallId === toolCallId
+    )
+  ) {
+    return normalizedItems
+  }
+
+  return [
+    ...normalizedItems,
+    {
+      id: `tool_item_${toolCallId}`,
+      type: 'tool',
+      toolCallId,
+    },
+  ]
+}
 
 export default function ChatInterface() {
   const [viewMode, setViewMode] = useState<ViewMode>('chat')
@@ -126,6 +234,11 @@ export default function ChatInterface() {
   const abortControllerRef = useRef<AbortController | null>(null)
   const currentAssistantMessageIdRef = useRef<string | null>(null)
   const processedToolCallIdsRef = useRef<Set<string>>(new Set())
+  const lastAssistantStreamEventRef = useRef<
+    'reasoning' | 'content' | 'tool' | 'interrupt' | null
+  >(null)
+  const reasoningBlockCounterRef = useRef(0)
+  const contentBlockCounterRef = useRef(0)
   const requestModeRef = useRef<RequestMode>('agent')
   const requestKnowledgeBaseRef = useRef<KnowledgeBase | null>(null)
 
@@ -139,6 +252,9 @@ export default function ChatInterface() {
     setMessages([])
     currentAssistantMessageIdRef.current = null
     processedToolCallIdsRef.current.clear()
+    lastAssistantStreamEventRef.current = null
+    reasoningBlockCounterRef.current = 0
+    contentBlockCounterRef.current = 0
     const newId = generateSessionId()
     localStorage.setItem('rag_chat_session_id', newId)
     setSessionId(newId)
@@ -931,17 +1047,54 @@ export default function ChatInterface() {
       switch (event.event) {
         case 'token': {
           if (data.reasoning_token) {
-            updateAssistantMessage((message) => ({
-              ...message,
-              reasoningContent: `${message.reasoningContent || ''}${data.reasoning_token}`,
-            }))
+            const shouldStartNewBlock =
+              lastAssistantStreamEventRef.current !== 'reasoning'
+            updateAssistantMessage((message) => {
+              const { reasoningBlocks, messageItems } = appendReasoningToken(
+                message.reasoningBlocks,
+                message.messageItems,
+                data.reasoning_token || '',
+                shouldStartNewBlock,
+                () => {
+                  reasoningBlockCounterRef.current += 1
+                  return `${message.id}_reasoning_${reasoningBlockCounterRef.current}`
+                },
+                message.reasoningContent
+              )
+
+              return {
+                ...message,
+                reasoningBlocks,
+                messageItems,
+                reasoningContent: `${message.reasoningContent || ''}${data.reasoning_token}`,
+              }
+            })
+            lastAssistantStreamEventRef.current = 'reasoning'
           }
 
           if (data.token) {
-            updateAssistantMessage((message) => ({
-              ...message,
-              content: `${message.content}${data.token}`,
-            }))
+            const shouldAppendToLastBlock =
+              lastAssistantStreamEventRef.current === 'content'
+            updateAssistantMessage((message) => {
+              const { contentBlocks, messageItems } = appendContentToken(
+                message.contentBlocks,
+                message.messageItems,
+                data.token || '',
+                shouldAppendToLastBlock,
+                () => {
+                  contentBlockCounterRef.current += 1
+                  return `${message.id}_content_${contentBlockCounterRef.current}`
+                }
+              )
+
+              return {
+                ...message,
+                content: `${message.content}${data.token}`,
+                contentBlocks,
+                messageItems,
+              }
+            })
+            lastAssistantStreamEventRef.current = 'content'
           }
           break
         }
@@ -950,13 +1103,16 @@ export default function ChatInterface() {
           if (data.tool_calls?.length) {
             updateAssistantMessage((message) => {
               const tools = [...(message.toolData || [])]
+              let messageItems = message.messageItems || []
               for (const toolCall of data.tool_calls || []) {
                 if (!tools.some((tool) => tool.toolCall.id === toolCall.id)) {
                   tools.push({ toolCall, toolOutput: [] })
                 }
+                messageItems = ensureToolItem(messageItems, toolCall.id)
               }
-              return { ...message, toolData: tools }
+              return { ...message, toolData: tools, messageItems }
             })
+            lastAssistantStreamEventRef.current = 'tool'
           }
           break
         }
@@ -965,6 +1121,7 @@ export default function ChatInterface() {
           if (data.tool_output?.length) {
             updateAssistantMessage((message) => {
               let tools = [...(message.toolData || [])]
+              let messageItems = message.messageItems || []
 
               for (const output of data.tool_output || []) {
                 if (processedToolCallIdsRef.current.has(output.tool_call_id)) {
@@ -1003,10 +1160,12 @@ export default function ChatInterface() {
                     toolOutput: [normalizedOutput],
                   })
                 }
+                messageItems = ensureToolItem(messageItems, output.tool_call_id)
               }
 
-              return { ...message, toolData: tools }
+              return { ...message, toolData: tools, messageItems }
             })
+            lastAssistantStreamEventRef.current = 'tool'
           }
           break
         }
@@ -1017,6 +1176,7 @@ export default function ChatInterface() {
             setShowInterrupt(true)
             setIsProcessing(false)
             setStatus('ready')
+            lastAssistantStreamEventRef.current = 'interrupt'
           }
           break
         }
@@ -1098,6 +1258,9 @@ export default function ChatInterface() {
     const assistantMessageId = generateMessageId()
     currentAssistantMessageIdRef.current = assistantMessageId
     processedToolCallIdsRef.current.clear()
+    lastAssistantStreamEventRef.current = null
+    reasoningBlockCounterRef.current = 0
+    contentBlockCounterRef.current = 0
     requestModeRef.current = requestMode
     requestKnowledgeBaseRef.current = selectedKnowledgeBase
     addMessage({ id: assistantMessageId, role: 'ai', content: '', toolData: [] })
@@ -1148,6 +1311,9 @@ export default function ChatInterface() {
       setIsProcessing(false)
       currentAssistantMessageIdRef.current = null
       processedToolCallIdsRef.current.clear()
+      lastAssistantStreamEventRef.current = null
+      reasoningBlockCounterRef.current = 0
+      contentBlockCounterRef.current = 0
     }
   }
 
@@ -1208,6 +1374,9 @@ export default function ChatInterface() {
 
     setIsProcessing(true)
     setStatus('connecting')
+    lastAssistantStreamEventRef.current = null
+    reasoningBlockCounterRef.current = 0
+    contentBlockCounterRef.current = 0
     abortControllerRef.current = new AbortController()
 
     try {
@@ -1259,7 +1428,11 @@ export default function ChatInterface() {
     } finally {
       setIsProcessing(false)
       setInterruptData(null)
+      currentAssistantMessageIdRef.current = null
       processedToolCallIdsRef.current.clear()
+      lastAssistantStreamEventRef.current = null
+      reasoningBlockCounterRef.current = 0
+      contentBlockCounterRef.current = 0
     }
   }
 

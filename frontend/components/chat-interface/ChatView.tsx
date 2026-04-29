@@ -3,8 +3,10 @@
 import type { KeyboardEvent, Ref } from 'react'
 
 import styles from '../ChatInterface.module.css'
+import { ReasoningCard } from './ReasoningCard'
 import { ToolCard } from './ToolCard'
 import type {
+  AssistantMessageItem,
   ChatStatus,
   InterruptData,
   Message,
@@ -39,6 +41,84 @@ interface ChatViewProps {
   onNavigateToKnowledge: () => void
   onAbortRequest: () => void
   onSendMessage: () => void | Promise<void>
+}
+
+function getAssistantMessageItems(msg: Message): AssistantMessageItem[] {
+  if (msg.messageItems?.length) return msg.messageItems
+
+  const reasoningItems = (
+    msg.reasoningBlocks?.length
+      ? msg.reasoningBlocks
+      : msg.reasoningContent
+        ? [{ id: `${msg.id}_reasoning_legacy`, content: msg.reasoningContent }]
+        : []
+  ).map((block) => ({
+    id: `reasoning_item_${block.id}`,
+    type: 'reasoning' as const,
+    reasoningBlockId: block.id,
+  }))
+  const toolItems = (msg.toolData || []).map((toolData) => ({
+    id: `tool_item_${toolData.toolCall.id}`,
+    type: 'tool' as const,
+    toolCallId: toolData.toolCall.id,
+  }))
+  const contentItems = msg.content
+    ? [
+        {
+          id: `${msg.id}_content_legacy_item`,
+          type: 'content' as const,
+          contentBlockId: `${msg.id}_content_legacy`,
+        },
+      ]
+    : []
+
+  return [...reasoningItems, ...toolItems, ...contentItems]
+}
+
+function AssistantMessageBody({ msg }: { msg: Message }) {
+  const reasoningBlocks =
+    msg.reasoningBlocks?.length
+      ? msg.reasoningBlocks
+      : msg.reasoningContent
+        ? [{ id: `${msg.id}_reasoning_legacy`, content: msg.reasoningContent }]
+        : []
+  const contentBlocks =
+    msg.contentBlocks?.length
+      ? msg.contentBlocks
+      : msg.content
+        ? [{ id: `${msg.id}_content_legacy`, content: msg.content }]
+        : []
+
+  return (
+    <>
+      {getAssistantMessageItems(msg).map((item) => {
+        if (item.type === 'reasoning') {
+          const block = reasoningBlocks.find(
+            (reasoningBlock) => reasoningBlock.id === item.reasoningBlockId
+          )
+          return block ? <ReasoningCard key={item.id} block={block} /> : null
+        }
+
+        if (item.type === 'tool') {
+          const toolData = msg.toolData?.find(
+            (data) => data.toolCall.id === item.toolCallId
+          )
+          return toolData ? <ToolCard key={item.id} toolData={toolData} /> : null
+        }
+
+        const block = contentBlocks.find(
+          (contentBlock) => contentBlock.id === item.contentBlockId
+        )
+        return block ? (
+          <div
+            key={item.id}
+            className={styles.messageContent}
+            dangerouslySetInnerHTML={{ __html: parseMarkdown(block.content) }}
+          />
+        ) : null
+      })}
+    </>
+  )
 }
 
 export function ChatView({
@@ -205,32 +285,12 @@ export function ChatView({
                       })}
                     </span>
                   </div>
-                  {msg.reasoningContent && (
-                    <div className={styles.reasoningContainer}>
-                      <div className={styles.reasoningHeader}>
-                        <span>深度思考</span>
-                      </div>
-                      <div
-                        className={styles.reasoningContent}
-                        dangerouslySetInnerHTML={{
-                          __html: parseMarkdown(msg.reasoningContent),
-                        }}
-                      />
-                    </div>
-                  )}
-                  {msg.toolData?.map((toolData) => (
-                    <ToolCard key={toolData.toolCall.id} toolData={toolData} />
-                  ))}
-                  {msg.content && (
-                    <div
-                      className={styles.messageContent}
-                      dangerouslySetInnerHTML={{ __html: parseMarkdown(msg.content) }}
-                    />
-                  )}
+                  <AssistantMessageBody msg={msg} />
                   {isProcessing &&
                     msg.id === currentAssistantMessageId &&
                     !msg.content &&
                     !msg.reasoningContent &&
+                    !msg.reasoningBlocks?.length &&
                     !msg.toolData?.length && (
                       <div className={styles.typingIndicator}>
                         <span />
