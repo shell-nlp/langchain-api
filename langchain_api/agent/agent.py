@@ -35,6 +35,7 @@ def init_env():
         logger.info("使用InMemoryStore作为长期记忆")
 
 
+init_env()
 _platform = sys.platform
 if _platform.startswith("win"):
     DEFUALT_SYSTEM_PROMPT = "你的运行环境是 Windows 系统, 你可以使用 Windows 相关的命令"

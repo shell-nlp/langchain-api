@@ -11,8 +11,11 @@
 - **前端界面**：Next.js + React 构建的交互式聊天界面
 - **可观测性**：集成 Phoenix tracing，支持 LangSmith
 
-## 项目结构
+## 界面预览
 
+![聊天界面](assets/img/chat.png)
+
+## 项目结构
 ```
 langchain-api/
 ├── langchain_api/          # 后端核心
